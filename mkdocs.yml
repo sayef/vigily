@@ -1,6 +1,6 @@
 site_name: vigily
 site_description: "An experiment tracker that keeps watch: runs, evaluations, scheduled evals and drift in one binary."
-site_url: https://vigily.pages.dev/
+site_url: !ENV [READTHEDOCS_CANONICAL_URL, 'https://vigily.readthedocs.io/en/latest/']
 repo_url: https://github.com/sayef/vigily
 repo_name: sayef/vigily
 edit_uri: edit/main/docs/
