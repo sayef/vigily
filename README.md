@@ -11,10 +11,11 @@
 </p>
 
 <p align="center">
-  <a href="docs/getting-started.md">Getting started</a> ·
-  <a href="docs/concepts.md">Concepts</a> ·
-  <a href="docs/guides/python-sdk.md">Python SDK</a> ·
-  <a href="docs/guides/drift.md">Drift methods</a> ·
+  <a href="https://vigily.pages.dev/">Docs</a> ·
+  <a href="https://vigily.pages.dev/getting-started/">Getting started</a> ·
+  <a href="https://vigily.pages.dev/concepts/">Concepts</a> ·
+  <a href="https://vigily.pages.dev/guides/python-sdk/">Python SDK</a> ·
+  <a href="https://vigily.pages.dev/guides/drift/">Drift methods</a> ·
   <a href="CHANGELOG.md">Changelog</a> ·
   <a href="CONTRIBUTING.md">Contributing</a>
 </p>

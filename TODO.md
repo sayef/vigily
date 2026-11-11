@@ -46,4 +46,3 @@ Next, roughly in order.
 ## Project
 
 - Publish to crates.io and PyPI once kv0 publishes.
-- Publish the documentation site on GitHub Pages once the repository is public.
