@@ -1,0 +1,301 @@
+name: Release
+
+# Releases a version tag in this order:
+#   1. build the binaries and wheels, and attach them to the tag's release, published as a pre-release
+#      (release-plz creates it as a draft; a tag pushed by hand gets one here);
+#   2. push the image to ghcr.io with its version tags;
+#   3. install the release with scripts/install.sh and run it on older distributions;
+#   4. only when all of that passed, mark the release as the latest and tag the image `latest`.
+# A failure leaves a pre-release that `latest` downloads never see. Nothing goes to crates.io or PyPI.
+# Nothing runs until the RELEASE_ENABLED repository variable is `true` (see CONTRIBUTING.md).
+on:
+  push:
+    tags: ["v*"]
+  # release-plz pushes its tags with GITHUB_TOKEN, which does not trigger `push`. Only Release-plz
+  # runs on main can trigger this (it never runs on pull requests), and the tag job only checks out
+  # the commit such a run released.
+  workflow_run: # zizmor: ignore[dangerous-triggers]
+    workflows: [Release-plz]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to build and publish, such as v0.2.0
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  # kv0 is a git dependency (Cargo.toml, pinned by Cargo.lock); this token reads it while it is private.
+  KV0_TOKEN: ${{ secrets.KV0_TOKEN }}
+
+jobs:
+  tag:
+    if: >-
+      github.repository_owner == 'sayef' && vars.RELEASE_ENABLED == 'true'
+      && (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success')
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+      prerelease: ${{ steps.tag.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+      - id: tag
+        env:
+          EVENT: ${{ github.event_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          case "$EVENT" in
+            workflow_run) tag=$(git tag --points-at HEAD --list 'v*' | sort -V | tail -n 1) ;;
+            workflow_dispatch) tag=$(git tag --list "$INPUT_TAG" | grep -x 'v.*' || true) ;;
+            *) tag=$([[ "$GITHUB_REF" == refs/tags/v* ]] && echo "$GITHUB_REF_NAME" || true) ;;
+          esac
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          # v1.2.0-rc.1 and the like stay pre-releases and never become `latest`.
+          [[ "$tag" == *-* ]] && echo "prerelease=true" >> "$GITHUB_OUTPUT" || echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          echo "Release tag: ${tag:-none}"
+
+  ui:
+    needs: tag
+    if: needs.tag.outputs.tag != ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.tag.outputs.tag }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: crates/vigily-ui/.nvmrc
+          # Release builds start from a clean slate: no dependency cache that another run could have written.
+          package-manager-cache: false
+      - run: npm ci && npm run build
+        working-directory: crates/vigily-ui
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ui-dist
+          path: crates/vigily-ui/dist
+
+  binary:
+    needs: [tag, ui]
+    strategy:
+      fail-fast: false
+      matrix:
+        # Linux builds run on Debian 11 (glibc 2.31), so the binary runs on Ubuntu 20.04, Debian 11,
+        # RHEL 9 and newer. scripts/install.sh downloads these archives and their .sha256 files.
+        include:
+          - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu, container: "rust:1.98-bullseye" }
+          - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu, container: "rust:1.98-bullseye" }
+          - { os: macos-latest, target: aarch64-apple-darwin }
+          - { os: macos-latest, target: x86_64-apple-darwin }
+    runs-on: ${{ matrix.os }}
+    container: ${{ matrix.container }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.tag.outputs.tag }}
+          persist-credentials: false
+          path: vigily
+      - name: Credentials for kv0 (a private git dependency until it is published)
+        if: env.KV0_TOKEN != ''
+        run: git config --global url."https://x-access-token:${KV0_TOKEN}@github.com/sayef/kv0".insteadOf "https://github.com/sayef/kv0"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ui-dist
+          path: vigily/crates/vigily-ui/dist
+      # Debian 11's security archive is retired; the build tools come from the main archive.
+      - if: runner.os == 'Linux'
+        run: |
+          sed -i '/bullseye-security/d' /etc/apt/sources.list
+          apt-get update && apt-get install -y --no-install-recommends protobuf-compiler libprotobuf-dev
+      - if: runner.os == 'macOS'
+        run: brew install protobuf
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: stable
+          targets: ${{ matrix.target }}
+      - run: cargo build --release --locked --target "$TARGET" -p vigily-cli --features s3,gcs,azure
+        working-directory: vigily
+        env:
+          TARGET: ${{ matrix.target }}
+      - name: Package with a checksum
+        run: |
+          a="vigily-${TARGET}.tar.gz"
+          tar czf "$a" -C "vigily/target/${TARGET}/release" vigily
+          if command -v sha256sum >/dev/null; then sha256sum "$a" > "$a.sha256"; else shasum -a 256 "$a" > "$a.sha256"; fi
+        env:
+          TARGET: ${{ matrix.target }}
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: vigily-${{ matrix.target }}
+          path: vigily-${{ matrix.target }}.tar.gz*
+
+  wheels:
+    needs: tag
+    if: needs.tag.outputs.tag != ''
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.tag.outputs.tag }}
+          persist-credentials: false
+          path: vigily
+      - name: Credentials for kv0 (a private git dependency until it is published)
+        if: env.KV0_TOKEN != ''
+        run: git config --global url."https://x-access-token:${KV0_TOKEN}@github.com/sayef/kv0".insteadOf "https://github.com/sayef/kv0"
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+      - if: runner.os == 'macOS'
+        run: brew install protobuf
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: stable
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: false
+      - run: uvx maturin build --release --out dist
+        working-directory: vigily
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: wheels-${{ matrix.os }}
+          path: vigily/dist
+
+  publish:
+    needs: [tag, binary, wheels]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: artifacts
+          merge-multiple: true
+      # Attach the files and publish as a pre-release: downloadable by tag (the checks below need
+      # that) but not yet what `releases/latest` serves.
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.tag.outputs.tag }}
+        run: |
+          gh release view "$TAG" >/dev/null 2>&1 \
+            || gh release create "$TAG" --verify-tag --draft --title "$TAG" --generate-notes
+          gh release upload "$TAG" artifacts/* --clobber
+          gh release edit "$TAG" --draft=false --prerelease --latest=false
+
+  image:
+    needs: [tag, binary]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.tag.outputs.tag }}
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: vigily-*-unknown-linux-gnu
+          path: artifacts
+          merge-multiple: true
+      # The Dockerfile's `local` target packages these release binaries (glibc 2.31) per platform.
+      - name: Unpack the Linux binaries per platform
+        run: |
+          for pair in x86_64:amd64 aarch64:arm64; do
+            (cd artifacts && sha256sum -c "vigily-${pair%%:*}-unknown-linux-gnu.tar.gz.sha256")
+            mkdir -p "dist/linux/${pair#*:}"
+            tar -xzf "artifacts/vigily-${pair%%:*}-unknown-linux-gnu.tar.gz" -C "dist/linux/${pair#*:}"
+          done
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        env:
+          # On the multi-platform index too, where ghcr.io reads the description and source.
+          DOCKER_METADATA_ANNOTATIONS_LEVELS: manifest,index
+        with:
+          images: ghcr.io/${{ github.repository }}
+          # `latest` is added by the promote-image job once the release has passed its checks.
+          flavor: latest=false
+          tags: |
+            type=semver,pattern=v{{version}},value=${{ needs.tag.outputs.tag }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ needs.tag.outputs.tag }},enable=${{ needs.tag.outputs.prerelease == 'false' }}
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          target: local
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          annotations: ${{ steps.meta.outputs.annotations }}
+          provenance: mode=max
+          sbom: true
+      - name: The image starts on both platforms
+        env:
+          IMAGE: ghcr.io/${{ github.repository }}:${{ needs.tag.outputs.tag }}
+        run: |
+          for p in linux/amd64 linux/arm64; do
+            docker run --rm --platform "$p" "$IMAGE" --version
+          done
+
+  install-check:
+    needs: [tag, publish]
+    # `./` is the documented form; actionlint (1.7.12) rejects the `$/` syntax zizmor suggests.
+    uses: ./.github/workflows/install-check.yml # zizmor: ignore[self-repository]
+    with:
+      tag: ${{ needs.tag.outputs.tag }}
+
+  portability:
+    needs: [tag, publish]
+    uses: ./.github/workflows/portability.yml # zizmor: ignore[self-repository]
+    with:
+      tag: ${{ needs.tag.outputs.tag }}
+
+  promote-release:
+    needs: [tag, image, install-check, portability]
+    if: needs.tag.outputs.prerelease == 'false'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.tag.outputs.tag }}
+        run: gh release edit "$TAG" --prerelease=false --latest
+
+  promote-image:
+    needs: [tag, image, install-check, portability]
+    if: needs.tag.outputs.prerelease == 'false'
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    steps:
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      # Points `latest` at the checked image; nothing is rebuilt.
+      - env:
+          IMAGE: ghcr.io/${{ github.repository }}
+          TAG: ${{ needs.tag.outputs.tag }}
+        run: docker buildx imagetools create --tag "$IMAGE:latest" "$IMAGE:$TAG"

@@ -1,0 +1,60 @@
+name: Install check
+
+# Installs a published release with scripts/install.sh, as users do, then starts the server once.
+# Callable from the release workflow, or by hand for any tag.
+on:
+  workflow_call:
+    inputs:
+      tag:
+        type: string
+        required: true
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to install, such as v0.1.0
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  install:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: "Ubuntu x64", os: ubuntu-latest }
+          - { name: "Ubuntu arm64", os: ubuntu-24.04-arm }
+          # A minimal system: dash as /bin/sh, nothing but curl added.
+          - { name: "Debian 12 slim", os: ubuntu-latest, container: "debian:12-slim" }
+          - { name: "macOS arm64", os: macos-latest }
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    container: ${{ matrix.container }}
+    steps:
+      - if: matrix.container
+        run: apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends curl ca-certificates
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install
+        env:
+          VIGILY_VERSION: ${{ inputs.tag }}
+          VIGILY_INSTALL_DIR: ${{ runner.temp }}/bin
+        run: |
+          sh scripts/install.sh
+          "$VIGILY_INSTALL_DIR/vigily" --version | grep -F "${VIGILY_VERSION#v}"
+      - name: The server starts and answers
+        env:
+          VIGILY: ${{ runner.temp }}/bin/vigily
+          VIGILY_REPO: ${{ runner.temp }}/repo
+        run: |
+          "$VIGILY" up --port 7600 > "$RUNNER_TEMP/up.log" 2>&1 &
+          pid=$!
+          ok=
+          for _ in $(seq 30); do
+            if curl -fsS http://127.0.0.1:7600/api/health; then ok=1; break; fi
+            sleep 1
+          done
+          kill "$pid"
+          [ -n "$ok" ] || { cat "$RUNNER_TEMP/up.log"; exit 1; }

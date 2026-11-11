@@ -1,0 +1,40 @@
+# vigily server configuration for the evaluation demo (examples/eval_demo.py).
+#
+#   vigily up --config examples/vigily.toml
+#
+# Commands run as the user that runs vigily, in `workdir` (relative to this file). Only this file
+# defines them; the web app and the API can read schedules but not create, change or start them.
+
+[[schedule]]
+name = "nightly-intents"
+description = "Score both intent classifiers on the latest support-intents dataset"
+cron = "0 2 * * *"
+timezone = "Europe/Berlin"
+command = ["uv", "run", "--no-sync", "python", "examples/evals/nightly.py"]
+workdir = ".."
+timeout = "15m"
+retries = 1
+retry_delay = "2m"
+missed = "run_once"
+keep_runs = 200        # runs kept for this schedule
+keep_days = 90         # and none older than this
+keep_output = 50       # captured output kept for the newest runs
+
+[[schedule]]
+name = "weekly-judge"
+description = "Grade answer quality with an LLM judge (needs JUDGE_ENDPOINT)"
+cron = "30 3 * * 1"
+timezone = "Europe/Berlin"
+command = ["uv", "run", "--no-sync", "python", "examples/evals/judge.py"]
+workdir = ".."
+timeout = "1h"
+retries = 1
+retry_delay = "5s"
+missed = "skip"
+
+[alerts]
+# webhook = "https://hooks.example.com/vigily"
+
+[drift]
+alpha = 0.01
+min_effect = 0.02

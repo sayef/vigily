@@ -1,0 +1,155 @@
+{% extends "main.html" %}
+
+{% block tabs %}
+{{ super() }}
+<div class="vg-home">
+  <div class="md-grid vg-wrap">
+    <section class="vg-lede" aria-labelledby="vg-headline">
+      <p class="vg-kicker">Experiment tracking <span aria-hidden="true">·</span> evaluation <span aria-hidden="true">·</span> drift</p>
+      <h1 id="vg-headline">Log every run, evaluate it every night, and know by morning <em>what drifted</em>.</h1>
+      <div class="vg-side">
+        <p>vigily is a self-hosted experiment tracker that keeps watching after you stop. Log training runs and
+          evaluations from Python, compare them in a fast web app, run evaluations on a schedule, and get the
+          evidence when behaviour or inputs move. One binary; your storage.</p>
+        <p class="vg-actions">
+          <a class="vg-btn vg-btn--solid" href="{{ 'getting-started/' | url }}">Get started</a>
+          <a class="vg-btn" href="{{ 'concepts/' | url }}">Concepts</a>
+          <a class="vg-btn" href="https://github.com/sayef/vigily">GitHub</a>
+        </p>
+      </div>
+    </section>
+
+    <figure class="vg-fig vg-fig--lead">
+      <img class="vg-only-light" src="{{ 'assets/screenshots/runs-desktop-light.png' | url }}" alt="The runs table: summary figures, loss sparklines and four selected runs lettered A to D" width="1440" height="900">
+      <img class="vg-only-dark" src="{{ 'assets/screenshots/runs-desktop-dark.png' | url }}" alt="The runs table in the dark theme" width="1440" height="900">
+      <figcaption><span><b>Fig. 1</b> The runs table: what is training, what finished, what failed, and a loss curve per run on one scale.</span><span>Synthetic data from <code>examples/demo.py</code></span></figcaption>
+    </figure>
+
+    <section class="vg-sec" aria-labelledby="vg-s1">
+      <header class="vg-sec__head"><span class="vg-no">01</span><h2 id="vg-s1">Track runs and long curves</h2></header>
+      <div class="vg-split">
+        <aside class="vg-note">
+          <b>Filter like you think</b>
+          <code>lr&lt;0.01 status:finished loss[val].min&lt;0.25</code>
+          <b>Reading Fig. 2</b>
+          Labels sit at the line ends instead of a legend; the run you are looking at is in ink blue.
+        </aside>
+        <div class="vg-body">
+          <p>A small Python SDK logs parameters and metric series. The runs table filters and sorts thousands of
+            runs with a short query language; charts ask for about as many points as they have pixels, so
+            200 000 points draw as fast as 200. Select runs and they become A, B, C, D, the letters they keep
+            when you compare them.</p>
+          <figure class="vg-fig">
+          <svg class="vg-chart" viewBox="0 0 580 220" role="img" aria-labelledby="fig2-cap">
+            <line class="vg-grid" x1="40" x2="464" y1="132" y2="132"/><text class="vg-tick" x="32" y="132" dy="0.32em" text-anchor="end">0.8</text><line class="vg-grid" x1="40" x2="464" y1="72" y2="72"/><text class="vg-tick" x="32" y="72" dy="0.32em" text-anchor="end">1.6</text><line class="vg-grid" x1="40" x2="464" y1="12" y2="12"/><text class="vg-tick" x="32" y="12" dy="0.32em" text-anchor="end">2.4</text><line class="vg-base" x1="40" x2="464" y1="192" y2="192"/><text class="vg-tick" x="32" y="192" dy="0.32em" text-anchor="end">0.0</text><line class="vg-base" x1="40" x2="40" y1="192" y2="196"/><text class="vg-tick" x="40" y="210" text-anchor="middle">0</text><line class="vg-base" x1="181" x2="181" y1="192" y2="196"/><text class="vg-tick" x="181" y="210" text-anchor="middle">10k</text><line class="vg-base" x1="323" x2="323" y1="192" y2="196"/><text class="vg-tick" x="323" y="210" text-anchor="middle">20k</text><line class="vg-base" x1="464" x2="464" y1="192" y2="196"/><text class="vg-tick" x="464" y="210" text-anchor="middle">30k</text>
+            <polyline class="vg-l-grey" points="40.0,17.6 47.1,26.1 54.1,36.2 61.2,41.2 68.3,45.1 75.3,53.4 82.4,60.9 89.5,63.7 96.5,67.7 103.6,75.3 110.7,80.2 117.7,81.8 124.8,86.3 131.9,92.7 138.9,95.4 146.0,96.6 153.1,101.5 160.1,106.3 167.2,107.3 174.3,109.0 181.3,113.7 188.4,116.8 195.5,117.0 202.5,119.2 209.6,123.4 216.7,124.9 223.7,125.0 230.8,127.7 237.9,130.9 244.9,131.3 252.0,131.7 259.1,134.6 266.1,136.6 273.2,136.4 280.3,137.4 287.3,140.0 294.4,140.9 301.5,140.7 308.5,142.1 315.6,144.1 322.7,144.3 329.7,144.3 336.8,145.9 343.9,147.2 350.9,147.0 358.0,147.5 365.1,148.9 372.1,149.5 379.2,149.4 386.3,150.1 393.3,151.1 400.4,151.4 407.5,151.4 414.5,152.1 421.6,152.8 428.7,152.9 435.7,153.2 442.8,153.7 449.9,154.0 456.9,154.3 464.0,154.6"/><polyline class="vg-l-ink" points="40.0,17.6 47.1,29.7 54.1,43.0 61.2,50.9 68.3,57.3 75.3,67.7 82.4,77.2 89.5,81.6 96.5,87.1 103.6,96.0 110.7,102.0 117.7,104.5 124.8,109.7 131.9,116.8 138.9,120.0 146.0,121.7 153.1,126.8 160.1,131.9 167.2,133.1 174.3,134.8 181.3,139.6 188.4,142.7 195.5,142.8 202.5,144.9 209.6,148.9 216.7,150.3 223.7,150.2 230.8,152.7 237.9,155.6 244.9,155.7 252.0,155.9 259.1,158.5 266.1,160.3 273.2,159.8 280.3,160.5 287.3,162.8 294.4,163.4 301.5,162.9 308.5,164.1 315.6,165.8 322.7,165.7 329.7,165.4 336.8,166.8 343.9,167.8 350.9,167.3 358.0,167.5 365.1,168.7 372.1,169.1 379.2,168.7 386.3,169.1 393.3,170.0 400.4,170.0 407.5,169.8 414.5,170.4 421.6,170.8 428.7,170.7 435.7,170.8 442.8,171.2 449.9,171.3 456.9,171.4 464.0,171.5"/><polyline class="vg-l-subject" points="40.0,17.6 47.1,32.0 54.1,47.4 61.2,57.0 68.3,64.8 75.3,76.5 82.4,86.9 89.5,92.1 96.5,98.2 103.6,107.6 110.7,113.9 117.7,116.6 124.8,122.0 131.9,129.2 138.9,132.4 146.0,134.0 153.1,139.0 160.1,143.9 167.2,144.9 174.3,146.4 181.3,151.0 188.4,153.8 195.5,153.7 202.5,155.5 209.6,159.3 216.7,160.3 223.7,160.0 230.8,162.2 237.9,164.8 244.9,164.7 252.0,164.6 259.1,166.9 266.1,168.4 273.2,167.7 280.3,168.1 287.3,170.2 294.4,170.6 301.5,169.9 308.5,170.8 315.6,172.3 322.7,172.1 329.7,171.6 336.8,172.8 343.9,173.6 350.9,173.0 358.0,173.0 365.1,174.1 372.1,174.3 379.2,173.8 386.3,174.1 393.3,174.9 400.4,174.7 407.5,174.5 414.5,174.9 421.6,175.3 428.7,175.1 435.7,175.1 442.8,175.4 449.9,175.5 456.9,175.4 464.0,175.5"/><polyline class="vg-lead" points="466,175.5 472,175.5 478,181"/><text class="vg-end vg-l-subject-t" x="482" y="181" dy="0.32em">A  lr 0.003</text><polyline class="vg-lead" points="466,171.5 472,171.5 478,166"/><text class="vg-end vg-l-ink-t" x="482" y="166" dy="0.32em">B  lr 0.001</text><polyline class="vg-lead" points="466,154.6 472,154.6 478,151"/><text class="vg-end vg-l-grey-t" x="482" y="151" dy="0.32em">C  lr 0.03</text>
+          </svg>
+            <figcaption id="fig2-cap"><span><b>Fig. 2</b> Training loss of three runs by step, labelled at the line ends. Illustrative data.</span></figcaption>
+          </figure>
+        </div>
+      </div>
+    </section>
+
+    <section class="vg-sec" aria-labelledby="vg-s2">
+      <header class="vg-sec__head"><span class="vg-no">02</span><h2 id="vg-s2">Evaluate on versioned datasets</h2></header>
+      <div class="vg-split">
+        <aside class="vg-note">
+          <b>What is recorded</b>
+          Every item's output, latency and scores, with the dataset version, the target and each evaluator's version.
+          <b>Model keys</b>
+          vigily never holds them: an LLM judge is your own code.
+        </aside>
+        <div class="vg-body">
+          <p>Datasets are content-addressed and immutable. <code>evaluate()</code> runs your target in your
+            process with exact match, regex, numeric, JSON schema or any Python function as the evaluator. Two
+            runs compare item by item, regressions first.</p>
+          <figure class="vg-fig">
+            <img class="vg-only-light" src="{{ 'assets/screenshots/eval-items-desktop-light.png' | url }}" alt="Per-item results of an evaluation run with pass and fail verdicts" width="1440" height="900" loading="lazy">
+            <img class="vg-only-dark" src="{{ 'assets/screenshots/eval-items-desktop-dark.png' | url }}" alt="Per-item results of an evaluation run in the dark theme" width="1440" height="900" loading="lazy">
+            <figcaption><span><b>Fig. 3</b> One evaluation run, item by item, with its verdicts.</span></figcaption>
+          </figure>
+        </div>
+      </div>
+    </section>
+
+    <section class="vg-sec" aria-labelledby="vg-s3">
+      <header class="vg-sec__head"><span class="vg-no">03</span><h2 id="vg-s3">Keep watch overnight</h2></header>
+      <div class="vg-split">
+        <aside class="vg-note">
+          <b>The test</b>
+          A paired Wilcoxon test on matched items, with a bootstrap interval. Inputs by PSI and Jensen–Shannon divergence.
+          <b>The baseline</b>
+          Runs that drifted never join it, so a regression keeps being reported until someone fixes it.
+        </aside>
+        <div class="vg-body">
+          <p>Schedules run your evaluation commands on cron in your time zone. Each run is compared with its
+            baseline item by item, and a drift raises an alert in the app and to a webhook, with the items
+            that flipped from pass to fail.</p>
+          <figure class="vg-fig">
+            <img class="vg-only-light" src="{{ 'assets/screenshots/suite-desktop-light.png' | url }}" alt="A drift suite: exact match per run below its baseline band, with the items that flipped" width="1440" height="900" loading="lazy">
+            <img class="vg-only-dark" src="{{ 'assets/screenshots/suite-desktop-dark.png' | url }}" alt="A drift suite in the dark theme" width="1440" height="900" loading="lazy">
+            <figcaption><span><b>Fig. 4</b> A nightly evaluation that drifted: the score per run against its baseline band.</span></figcaption>
+          </figure>
+        </div>
+      </div>
+    </section>
+
+    <section class="vg-sec" aria-labelledby="vg-s4">
+      <header class="vg-sec__head"><span class="vg-no">04</span><h2 id="vg-s4">One binary, your storage</h2></header>
+      <div class="vg-split">
+        <aside class="vg-note">
+          <b>Where data lives</b>
+          Lance tables written by kv0, in a directory or a bucket: local disk, S3, GCS or Azure.
+        </aside>
+        <div class="vg-body">
+          <p>The web app, the API, the scheduler and the drift monitor are one Rust binary.</p>
+          <div class="vg-code-grid">
+<pre class="vg-code"><code><span class="vg-c"># train.py</span>
+<span class="vg-k">from</span> vigily <span class="vg-k">import</span> Run
+
+run = Run(experiment=<span class="vg-s">"cifar10"</span>)
+run[<span class="vg-s">"hparams"</span>] = {<span class="vg-s">"lr"</span>: 3e-3}
+<span class="vg-k">for</span> step, loss <span class="vg-k">in</span> train():
+    run.track(loss, name=<span class="vg-s">"loss"</span>, step=step)
+run.finish()</code></pre>
+<pre class="vg-code"><code><span class="vg-c"># serve the app, the API and the schedules</span>
+<span class="vg-k">vigily</span> up --config vigily.toml
+
+<span class="vg-c"># list runs in a terminal</span>
+<span class="vg-k">vigily</span> runs <span class="vg-s">"exp:cifar10 loss[val]&lt;0.3"</span>
+
+<span class="vg-c"># run a schedule now</span>
+<span class="vg-k">vigily</span> schedules run nightly-intents</code></pre>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="vg-sec vg-sec--last" aria-labelledby="vg-s5">
+      <header class="vg-sec__head"><span class="vg-no">05</span><h2 id="vg-s5">Questions</h2></header>
+      <div class="vg-split">
+        <aside class="vg-note"><a href="{{ 'faq/' | url }}">All questions</a></aside>
+        <div class="vg-body vg-faq">
+          <details>
+            <summary>Does any data leave my machine?</summary>
+            <p>No. vigily writes to the directory or bucket you choose, has no telemetry, and never calls a model:
+              evaluators that need one call your own client.</p>
+          </details>
+          <details>
+            <summary>Do I need a database server?</summary>
+            <p>No. Storage is Lance tables through kv0, on local disk, S3, GCS or Azure.</p>
+          </details>
+          <details>
+            <summary>Can the web app start commands?</summary>
+            <p>No. Schedules come only from the server's <code>vigily.toml</code>; the API and the app can read them
+              but not create, change or start them.</p>
+          </details>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
+{% endblock %}
+
+{% block site_nav %}{% endblock %}
+{% block content %}{% endblock %}

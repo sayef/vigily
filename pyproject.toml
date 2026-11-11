@@ -1,0 +1,52 @@
+[build-system]
+requires = ["maturin>=1.8,<2"]
+build-backend = "maturin"
+
+[project]
+name = "vigily"
+description = "An experiment tracker that keeps watch: log runs, metrics and evaluations from Python"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Saiful Islam" }]
+requires-python = ">=3.11"
+keywords = ["experiment-tracking", "machine-learning", "mlops", "metrics", "hyperparameters"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Rust",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Typing :: Typed",
+]
+dynamic = ["version"]
+
+[project.urls]
+Homepage = "https://github.com/sayef/vigily"
+Issues = "https://github.com/sayef/vigily/issues"
+Changelog = "https://github.com/sayef/vigily/blob/main/CHANGELOG.md"
+
+[dependency-groups]
+dev = ["pytest>=8", "maturin>=1.8,<2", "ruff>=0.6"]
+
+[tool.maturin]
+manifest-path = "crates/vigily-py/Cargo.toml"
+python-source = "crates/vigily-py/python"
+module-name = "vigily._native"
+features = ["pyo3/extension-module"]
+
+[tool.pytest.ini_options]
+testpaths = ["crates/vigily-py/tests"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]
+
+[tool.ruff.lint.per-file-ignores]
+# SVG path data and markup read better on one line.
+"assets/src/build.py" = ["E501"]

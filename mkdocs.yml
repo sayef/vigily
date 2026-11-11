@@ -1,0 +1,116 @@
+site_name: vigily
+site_description: "An experiment tracker that keeps watch: runs, evaluations, scheduled evals and drift in one binary."
+repo_url: https://github.com/sayef/vigily
+repo_name: sayef/vigily
+edit_uri: edit/main/docs/
+copyright: Copyright &copy; Saiful Islam. Released under the MIT License.
+
+theme:
+  name: material
+  custom_dir: overrides
+  favicon: assets/favicon.svg
+  # Fonts are bundled (docs/assets/fonts, from the UI's fontsource packages); nothing loads from a CDN.
+  font: false
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-night
+        name: Switch to the dark theme
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to the light theme
+  features:
+    - navigation.tabs
+    - navigation.instant
+    - navigation.instant.progress
+    - navigation.tracking
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - navigation.indexes
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+    - content.action.edit
+    - toc.follow
+    - toc.integrate
+  icon:
+    repo: fontawesome/brands/github
+    edit: material/file-edit-outline
+
+extra_css:
+  - stylesheets/extra.css
+  - stylesheets/home.css
+
+extra_javascript:
+  - javascripts/site.js
+
+plugins:
+  - search
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight
+  - pymdownx.inlinehilite
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+
+hooks:
+  - docs/hooks.py
+
+exclude_docs: |
+  hooks.py
+  requirements.txt
+  __pycache__/
+
+validation:
+  omitted_files: warn
+  absolute_links: warn
+  unrecognized_links: warn
+  anchors: warn
+
+nav:
+  - Home: index.md
+  - Getting started: getting-started.md
+  - Concepts: concepts.md
+  - Guides:
+      - Python SDK: guides/python-sdk.md
+      - Command line: guides/cli.md
+      - Configuration and vigily.toml: guides/configuration.md
+      - Scheduled evaluations and security: guides/scheduled-evals.md
+      - Drift methods: guides/drift.md
+      - LLM tracing: guides/tracing.md
+      - Self-hosting and storage: guides/storage.md
+      - The audit trail: guides/audit-trail.md
+  - Design:
+      - Brand: design/brand.md
+      - Architecture: architecture.md
+      - Design decisions: design/decisions.md
+      - Interface goals: design/brief.md
+      - What vigily needs from kv0: kv0-requests.md
+  - About:
+      - FAQ: faq.md
+      - Changelog: changelog.md
+      - Contributing: contributing.md
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/sayef/vigily

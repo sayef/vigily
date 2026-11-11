@@ -1,0 +1,333 @@
+@import "tailwindcss";
+/* Recursive (SIL OFL), its MONO and weight axes; CASL 0 (Linear) and upright in this subset. */
+@import "@fontsource-variable/recursive/mono.css";
+@import "uplot/dist/uPlot.min.css";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-popover: var(--popover);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-brand: var(--brand);
+  --color-brand-foreground: var(--brand-foreground);
+  --color-brand-tint: var(--brand-tint);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-faint: var(--faint);
+  --color-hover: var(--hover);
+  --color-rule: var(--rule);
+  --color-cell: var(--cell);
+  --color-danger-tint: var(--danger-tint);
+  --color-series: var(--series);
+  --color-series-strong: var(--series-strong);
+  --text-xs: 0.75rem;
+  --text-xs--line-height: 1.35;
+  --text-sm: 0.8125rem;
+  --text-sm--line-height: 1.4;
+  --text-base: 0.875rem;
+  --text-base--line-height: 1.5;
+  --text-lg: 0.9375rem;
+  --text-lg--line-height: 1.35;
+  --text-xl: 1.625rem;
+  --text-xl--line-height: 1.1;
+  --radius-sm: 0px;
+  --radius-md: 0px;
+  --radius-lg: 0px;
+  --radius-xl: 0px;
+  /* One family: Recursive Sans Linear for text, Recursive Mono Linear for names, values, keys and
+     code, so an id reads the same in prose and in a table. */
+  --font-sans: "Recursive Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-sans--font-variation-settings: "MONO" 0, "CASL" 0;
+  --font-mono: "Recursive Variable", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-mono--font-variation-settings: "MONO" 1, "CASL" 0;
+  /* Recursive turns informal when very heavy: bold is a step lighter than 700. */
+  --font-weight-bold: 660;
+  --shadow-float: 0 0 0 1px var(--rule);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Warm paper neutrals, ink rules and one ink-blue signal. Tokens and reasons: brand/DESIGN.md. */
+:root {
+  --background: #f6f5f1;
+  --foreground: #151719;
+  --card: #fbfaf7;
+  --popover: #fbfaf7;
+  --muted: #eeede7;
+  --muted-foreground: #55595f;
+  --faint: #65686d;
+  --hover: #e8e7e1;
+  --brand: #1f4e8c;
+  --brand-foreground: #ffffff;
+  --brand-tint: #e3e9f2;
+  --success: #1f4e8c;
+  --warning: #8f5400;
+  --danger: #b42318;
+  --danger-tint: #f3dcd8;
+  --border: #d9d7d0;
+  --input: #8e8c85;
+  --rule: #151719;
+  --ring: #1f4e8c;
+  --sidebar: #efeee9;
+  --series: #8e8c85;
+  --series-strong: #55595f;
+  --cell: #e2e0d9;
+  --shadow-ink: transparent;
+  --shadow-ink-far: transparent;
+  --scrim: rgb(21 23 25 / 0.45);
+  --logo-body: #151719;
+  --logo-glass: #1f4e8c;
+  --logo-glint: #ffffff;
+}
+
+/* A warm night: the same paper and ink, inverted, with the blue lifted for a dark ground. */
+.dark {
+  --background: #161513;
+  --foreground: #eae7e0;
+  --card: #1b1a17;
+  --popover: #1e1d1a;
+  --muted: #26241f;
+  --muted-foreground: #ada89e;
+  --faint: #948f85;
+  --hover: #2a2823;
+  --brand: #8db3ec;
+  --brand-foreground: #161513;
+  --brand-tint: #1d2a3d;
+  --success: #8db3ec;
+  --warning: #e5ae4a;
+  --danger: #f08a80;
+  --danger-tint: #3b211e;
+  --border: #34312c;
+  --input: #6e695f;
+  --rule: #eae7e0;
+  --ring: #8db3ec;
+  --sidebar: #1e1d1a;
+  --series: #6e695f;
+  --series-strong: #ada89e;
+  --cell: #312e29;
+  --shadow-ink: transparent;
+  --shadow-ink-far: transparent;
+  --scrim: rgb(0 0 0 / 0.6);
+  --logo-body: #8db3ec;
+  --logo-glass: #14304f;
+  --logo-glint: #eae7e0;
+}
+
+@utility nums {
+  font-variant-numeric: tabular-nums;
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  html {
+    color-scheme: light;
+  }
+  .dark {
+    color-scheme: dark;
+  }
+  body {
+    background: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    font-variation-settings: var(--font-sans--font-variation-settings);
+    font-size: 14px;
+    line-height: 1.5;
+    font-variant-numeric: tabular-nums lining-nums;
+    -webkit-font-smoothing: antialiased;
+    -webkit-tap-highlight-color: transparent;
+    caret-color: var(--color-brand);
+  }
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+    scroll-margin-top: 1rem;
+  }
+  a {
+    text-underline-offset: 0.18em;
+    text-decoration-thickness: 1px;
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-ring);
+    outline-offset: 2px;
+  }
+  button,
+  a,
+  input,
+  select,
+  textarea,
+  summary,
+  [role="tab"] {
+    touch-action: manipulation;
+  }
+  input[type="checkbox"],
+  input[type="radio"],
+  input[type="range"] {
+    accent-color: var(--color-foreground);
+  }
+  input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+  }
+  select {
+    appearance: none;
+    background-color: var(--color-card);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238a929c' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-position: right 0.5rem center;
+    background-repeat: no-repeat;
+    background-size: 14px;
+    padding-right: 1.75rem !important;
+    color: var(--color-foreground);
+    border-color: var(--color-input);
+  }
+  ::selection {
+    background: color-mix(in srgb, var(--color-brand) 25%, transparent);
+  }
+  * {
+    scrollbar-color: color-mix(in srgb, var(--color-muted-foreground) 35%, transparent) transparent;
+  }
+  /* Dense tables: small uppercase heads, hairlines between rows. */
+  thead th {
+    font-size: 11px;
+    font-weight: 660;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--faint);
+  }
+  code,
+  kbd,
+  pre,
+  samp {
+    font-family: var(--font-mono);
+    font-variation-settings: var(--font-mono--font-variation-settings);
+    font-size: 0.92em;
+  }
+}
+
+/* Reduced motion: keep every state change, drop the travel. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 60ms !important;
+  }
+}
+
+/* uPlot in the app's colours: the zoom selection and the crosshair. */
+.u-select {
+  background: color-mix(in srgb, var(--color-brand) 12%, transparent);
+}
+.u-cursor-x,
+.u-cursor-y {
+  border-color: var(--color-muted-foreground) !important;
+  border-right-style: solid !important;
+}
+.u-cursor-y {
+  display: none;
+}
+.uplot,
+.uplot * {
+  font-family: var(--font-sans);
+  font-variation-settings: var(--font-sans--font-variation-settings);
+}
+.u-over {
+  cursor: crosshair;
+}
+
+/* Phones zoom into fields under 16px, and touch needs 44px targets. */
+@media (max-width: 639px) {
+  input:not([type="checkbox"], [type="radio"], [type="range"]),
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+@media (pointer: coarse) {
+  input:not([type="checkbox"], [type="radio"], [type="range"]),
+  select {
+    min-height: 44px;
+  }
+}
+
+/* Opening motion: the scrim fades, a sheet slides a short way in. Reduced motion keeps the change. */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes sheet-in {
+  from {
+    transform: translateX(24px);
+    opacity: 0;
+  }
+}
+
+/* A running run: a small accent square that blinks; still under reduced motion. */
+@keyframes blink {
+  50% {
+    opacity: 0;
+  }
+}
+.live-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  background: var(--brand);
+  animation: blink 1.4s steps(2) infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .live-dot {
+    animation: none !important;
+  }
+}
+
+/* The selection bar: solid ink with paper text, in both themes. Components inside keep their tokens. */
+.inverse {
+  --background: #151719;
+  --foreground: #f6f5f1;
+  --card: #151719;
+  --muted: #2a2d30;
+  --muted-foreground: #c3c6ca;
+  --faint: #a9adb2;
+  --hover: #2a2d30;
+  --border: #55595f;
+  --input: #6b6e73;
+  --rule: #f6f5f1;
+  --brand: #8db3ec;
+  --danger: #f08a80;
+  --ring: #8db3ec;
+  background: var(--background);
+  color: var(--foreground);
+}
+.dark .inverse {
+  --background: #eae7e0;
+  --foreground: #161513;
+  --card: #eae7e0;
+  --muted: #d6d2c9;
+  --muted-foreground: #4a463f;
+  --faint: #5a554c;
+  --hover: #d6d2c9;
+  --border: #948f85;
+  --input: #6e695f;
+  --rule: #161513;
+  --brand: #1f4e8c;
+  --danger: #b42318;
+  --ring: #1f4e8c;
+}

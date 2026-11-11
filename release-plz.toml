@@ -1,0 +1,61 @@
+# Release pull requests and tags (.github/workflows/release-plz.yml). vigily is not published to
+# crates.io: its storage dependency, kv0, is not there yet, so versions come from the git tags.
+[workspace]
+# Release only when a release pull request is merged, not on every push to main.
+release_always = false
+git_only = true
+publish = false
+# Checks against the previously published crate; there is none.
+semver_check = false
+changelog_update = false
+git_release_enable = false
+git_tag_enable = false
+pr_labels = ["release"]
+
+# One version for the whole workspace, one tag and one release, named after the `vigily` binary.
+[[package]]
+name = "vigily-cli"
+changelog_update = true
+changelog_path = "CHANGELOG.md"
+changelog_include = ["vigily-core", "vigily-server", "vigily-ui", "vigily-py"]
+git_tag_enable = true
+git_tag_name = "v{{ version }}"
+git_release_enable = true
+git_release_name = "v{{ version }}"
+# A draft: release.yml attaches the binaries, checks the install and only then publishes it as
+# the latest release.
+git_release_draft = true
+git_release_latest = false
+
+[changelog]
+header = """# Changelog
+
+All notable changes to vigily are documented here. The format follows
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
+[Semantic Versioning](https://semver.org/).
+
+## [Unreleased]
+"""
+
+# Only the version heading: the hand-written notes under `## [Unreleased]` become the release's entry.
+body = """
+## [{{ version }}]\
+    {%- if release_link -%}({{ release_link }}){% endif %} \
+    - {{ timestamp | date(format="%Y-%m-%d") }}
+"""
+
+trim = false
+protect_breaking_commits = true
+sort_commits = "oldest"
+
+commit_parsers = [
+    { message = "^chore(\\(.*\\))?: release", skip = true },
+    { message = "^Merge (pull request|branch)", skip = true },
+    { message = "^(feat|[Aa]dd|[Ss]upport|[Ii]ntroduce)", group = "<!-- 0 -->Added" },
+    { message = "^(deprecated|[Dd]eprecate)", group = "<!-- 2 -->Deprecated" },
+    { message = "^(remove|[Rr]emove|[Dd]elete|[Dd]rop)", group = "<!-- 3 -->Removed" },
+    { message = "^(fix|[Ff]ix)", group = "<!-- 4 -->Fixed" },
+    { message = "^(security|[Ss]ecurity)", group = "<!-- 5 -->Security" },
+    { message = "^(chore|ci|build|test|style)(\\(.*\\))?:", skip = true },
+    { message = ".*", group = "<!-- 1 -->Changed" },
+]

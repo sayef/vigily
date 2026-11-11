@@ -1,0 +1,34 @@
+# vigily as a server: `docker compose up -d`, then open http://localhost:7600. This runs the
+# published image (ghcr.io/sayef/vigily); VIGILY_IMAGE picks another tag, such as
+# ghcr.io/sayef/vigily:v0.2.0, or vigily:local from scripts/docker-local.sh.
+#
+# To build the image from this checkout instead, add compose.dev.yaml:
+#   GH_TOKEN=$(gh auth token) docker compose -f compose.yaml -f compose.dev.yaml up -d --build
+#
+# To log runs from scripts on this machine, keep the data in a directory here instead of a volume,
+# owned by you, and point the SDK at it:
+#   mkdir -p vigily-data
+#   VIGILY_DATA=./vigily-data VIGILY_UID=$(id -u) VIGILY_GID=$(id -g) docker compose up -d
+#   VIGILY_REPO=./vigily-data/repo python train.py
+name: vigily
+
+services:
+  vigily:
+    image: ${VIGILY_IMAGE:-ghcr.io/sayef/vigily:latest}
+    restart: unless-stopped
+    # The image's user by default; your own ids when the data is a directory on this machine.
+    user: "${VIGILY_UID:-10001}:${VIGILY_GID:-10001}"
+    # Published on this machine only; vigily has no sign-in, so put your own access control in front
+    # before exposing it further.
+    ports: ["127.0.0.1:${VIGILY_HOST_PORT:-7600}:7600"]
+    environment:
+      # Optional; see docs/guides/configuration.md.
+      VIGILY_LOG: ${VIGILY_LOG:-warn,vigily=info}
+      # A directory inside the container, or an object-store URI (s3://, gs://, az://). Not read
+      # from VIGILY_REPO, which on this machine points the SDK at the same data by its host path.
+      VIGILY_REPO: ${VIGILY_SERVER_REPO:-/data/repo}
+    # The named volume, or a directory on this machine (VIGILY_DATA=./vigily-data).
+    volumes: ["${VIGILY_DATA:-vigily}:/data"]
+
+volumes:
+  vigily:

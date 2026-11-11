@@ -1,0 +1,30 @@
+[package]
+name = "vigily-cli"
+description = "The vigily command: serve the web app and API, list runs, compact a repository"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+
+[[bin]]
+name = "vigily"
+path = "src/main.rs"
+
+[features]
+default = []
+# Object-store backends for repositories on S3, GCS or Azure (local directories always work).
+s3 = ["vigily-core/s3"]
+gcs = ["vigily-core/gcs"]
+azure = ["vigily-core/azure"]
+
+[dependencies]
+vigily-core.workspace = true
+vigily-server.workspace = true
+vigily-ui.workspace = true
+anyhow.workspace = true
+clap.workspace = true
+tokio.workspace = true
+tracing-subscriber.workspace = true

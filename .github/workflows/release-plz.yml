@@ -1,0 +1,75 @@
+name: Release-plz
+
+# Opens the release pull request (version bump and CHANGELOG.md entry) and, once it is merged, tags
+# `vX.Y.Z` and creates a draft GitHub release; release.yml then builds, checks and publishes it.
+# Nothing goes to crates.io (release-plz.toml). Nothing runs until RELEASE_ENABLED is `true`.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  # kv0 is a git dependency (Cargo.toml, pinned by Cargo.lock); this token reads it while it is private.
+  KV0_TOKEN: ${{ secrets.KV0_TOKEN }}
+
+jobs:
+  # Tags and creates the draft release when a release pull request has been merged.
+  # The tag is pushed with GITHUB_TOKEN, so release.yml picks it up through `workflow_run`, not `push`.
+  release:
+    if: github.repository_owner == 'sayef' && vars.RELEASE_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: read
+    concurrency:
+      group: release-plz-release
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Credentials for kv0 (a private git dependency until it is published)
+        if: env.KV0_TOKEN != ''
+        run: git config --global url."https://x-access-token:${KV0_TOKEN}@github.com/sayef/kv0".insteadOf "https://github.com/sayef/kv0"
+      - run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: stable
+      - uses: release-plz/action@66b324fd6c72d05d2a08568492ecdd62bfb8a62b # v0.5.148
+        with:
+          command: release
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+  # Opens or updates the release pull request.
+  release-pr:
+    if: github.repository_owner == 'sayef' && vars.RELEASE_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    concurrency:
+      group: release-plz-pr
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Credentials for kv0 (a private git dependency until it is published)
+        if: env.KV0_TOKEN != ''
+        run: git config --global url."https://x-access-token:${KV0_TOKEN}@github.com/sayef/kv0".insteadOf "https://github.com/sayef/kv0"
+      - run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: stable
+      - uses: release-plz/action@66b324fd6c72d05d2a08568492ecdd62bfb8a62b # v0.5.148
+        with:
+          command: release-pr
+        env:
+          # A pull request opened with GITHUB_TOKEN gets no CI runs; RELEASE_PLZ_TOKEN (a GitHub App
+          # token or a fine-grained PAT) gets them.
+          GITHUB_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN || github.token }}

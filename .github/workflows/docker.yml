@@ -1,0 +1,54 @@
+name: Docker
+
+# Builds the image and checks that it serves; publishing it belongs to the release workflow.
+on:
+  push:
+    branches: [main]
+    paths: &paths
+      - Dockerfile
+      - .dockerignore
+      - compose.yaml
+      - compose.dev.yaml
+      - Cargo.toml
+      - Cargo.lock
+      - crates/**
+      - .github/workflows/docker.yml
+  pull_request:
+    paths: *paths
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docker-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: |
+          docker compose config --quiet
+          docker compose -f compose.yaml -f compose.dev.yaml config --quiet
+      - name: Build the image
+        env:
+          # kv0 is a private git dependency until it is published; the build reads it through this secret.
+          GH_TOKEN: ${{ secrets.KV0_TOKEN }}
+        run: docker build --secret id=gh_token,env=GH_TOKEN -t vigily:ci .
+      - name: The container serves the web app and the API
+        run: |
+          docker run -d --name vigily -p 127.0.0.1:7600:7600 vigily:ci
+          for _ in $(seq 30); do
+            [ "$(docker inspect -f '{{.State.Health.Status}}' vigily)" = healthy ] && break
+            sleep 2
+          done
+          docker inspect -f '{{.State.Health.Status}}' vigily | grep -qx healthy
+          curl -fsS http://127.0.0.1:7600/api/health
+          curl -fsS http://127.0.0.1:7600/ | grep -qi '<html'
+          docker image ls vigily:ci --format '{{.Size}}'
+      - if: failure()
+        run: docker logs vigily

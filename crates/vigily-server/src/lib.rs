@@ -1,0 +1,927 @@
+//! vigily's HTTP server: a JSON API under `/api/` over a [`Catalog`], and the embedded web app
+//! for every other path.
+//!
+//! | Method and path        | What it returns |
+//! |------------------------|-----------------|
+//! | `GET /api/meta`        | Repository, counts, experiments, metric keys and parameter keys |
+//! | `GET /api/runs`        | Runs matching `q`, sorted by `sort` (a column id), with parameters and metric statistics |
+//! | `GET /api/runs/{id}`   | One run with its parameter tree and series |
+//! | `PATCH /api/runs/{id}` | Changes name, experiment, notes, tags or archived |
+//! | `POST /api/chart`      | One metric for many runs, aligned and downsampled for a chart |
+//! | `GET /api/health`      | `ok` |
+//!
+//! Evaluations are served by [`evals_api`], traces by [`traces_api`].
+
+pub mod config;
+pub mod evals_api;
+pub mod monitor;
+pub mod scheduler;
+pub mod traces_api;
+
+use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::net::SocketAddr;
+use std::sync::Arc;
+use std::time::Duration;
+
+use axum::extract::{Path, Query as QueryParams, State};
+use axum::http::{header, StatusCode};
+use axum::response::{IntoResponse, Response};
+use axum::routing::{get, post};
+use axum::{Json, Router};
+use parking_lot::Mutex;
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use vigily_core::chart::{aggregate, align, x_values, Band, XAxis, Xy};
+use vigily_core::{
+    Catalog, Column, Error as CoreError, MemoryRecords, Points, Query, RecordStore, RunEntry,
+    RunPatch, RunStatus, StepRange, Store, Summary,
+};
+
+/// How often the catalog is refreshed in the background.
+pub const REFRESH_EVERY: Duration = Duration::from_secs(2);
+
+/// The longest run filter accepted, in bytes.
+pub const MAX_QUERY: usize = 4096;
+
+/// How often storage is compacted in the background, when enabled.
+pub const OPTIMIZE_EVERY: Duration = Duration::from_secs(15 * 60);
+
+/// Shared server state.
+pub struct AppState {
+    pub catalog: Catalog,
+    /// Datasets, eval results, labels, schedule runs, alerts.
+    pub records: Arc<dyn RecordStore>,
+    pub config: config::Config,
+    /// The next fire time of each running schedule (UTC microseconds).
+    pub schedule_status: parking_lot::RwLock<BTreeMap<String, i64>>,
+    pub http: reqwest::Client,
+    /// Drift histories by suite and score (or `data`), with the fingerprint they were computed for.
+    pub(crate) drift_cache: Mutex<HashMap<String, (String, CachedValue)>>,
+    cache: Mutex<PointCache>,
+    /// Serialises trace ingests and deletions (a trace's summary is read, updated and written).
+    pub(crate) ingest_lock: tokio::sync::Mutex<()>,
+    /// Trace summaries with the trace table's version they were read at.
+    pub(crate) traces_cache: Mutex<Option<TracesCache>>,
+    /// The number of traces and when it was counted (UTC microseconds).
+    pub(crate) traces_count: Mutex<Option<(i64, usize)>>,
+    pub version: &'static str,
+}
+
+impl AppState {
+    /// A server over `store` with in-memory records and no configuration (tests, embedding).
+    pub fn new(store: Arc<dyn Store>) -> Arc<Self> {
+        Self::with(
+            store,
+            Arc::new(MemoryRecords::new()),
+            config::Config::default(),
+        )
+    }
+
+    pub fn with(
+        store: Arc<dyn Store>,
+        records: Arc<dyn RecordStore>,
+        config: config::Config,
+    ) -> Arc<Self> {
+        Arc::new(Self {
+            catalog: Catalog::new(store),
+            records,
+            config,
+            schedule_status: parking_lot::RwLock::new(BTreeMap::new()),
+            drift_cache: Mutex::new(HashMap::new()),
+            http: reqwest::Client::builder()
+                .timeout(Duration::from_secs(10))
+                .redirect(reqwest::redirect::Policy::none())
+                .build()
+                .unwrap_or_default(),
+            cache: Mutex::new(PointCache::new(8_000_000)),
+            ingest_lock: tokio::sync::Mutex::new(()),
+            traces_cache: Mutex::new(None),
+            traces_count: Mutex::new(None),
+            version: env!("CARGO_PKG_VERSION"),
+        })
+    }
+}
+
+/// Trace summaries and the storage version they were read at.
+pub(crate) type TracesCache = (Option<u64>, Arc<Vec<vigily_core::traces::TraceSummary>>);
+
+/// A cached computation of any type.
+pub(crate) type CachedValue = Arc<dyn std::any::Any + Send + Sync>;
+
+/// Raw points of finished series, so zooming does not read storage again. Bounded by a total
+/// point budget, evicting the oldest entries first.
+struct PointCache {
+    budget: usize,
+    used: usize,
+    map: HashMap<u64, (u64, Arc<Points>)>,
+    order: VecDeque<u64>,
+}
+
+impl PointCache {
+    fn new(budget: usize) -> Self {
+        Self {
+            budget,
+            used: 0,
+            map: HashMap::new(),
+            order: VecDeque::new(),
+        }
+    }
+
+    fn get(&self, id: u64, count: u64) -> Option<Arc<Points>> {
+        self.map
+            .get(&id)
+            .filter(|(c, _)| *c == count)
+            .map(|(_, p)| p.clone())
+    }
+
+    fn put(&mut self, id: u64, count: u64, p: Arc<Points>) {
+        if p.len() > self.budget / 4 {
+            return;
+        }
+        if let Some((_, old)) = self.map.insert(id, (count, p.clone())) {
+            self.used -= old.len();
+        } else {
+            self.order.push_back(id);
+        }
+        self.used += p.len();
+        while self.used > self.budget {
+            let Some(old) = self.order.pop_front() else {
+                break;
+            };
+            if let Some((_, q)) = self.map.remove(&old) {
+                self.used -= q.len();
+            }
+        }
+    }
+}
+
+/// An API error: a status and a sentence that names the problem and the way out.
+#[derive(Debug)]
+pub struct ApiError {
+    status: StatusCode,
+    message: String,
+    position: Option<usize>,
+}
+
+impl ApiError {
+    pub(crate) fn new(status: StatusCode, message: impl Into<String>) -> Self {
+        Self {
+            status,
+            message: message.into(),
+            position: None,
+        }
+    }
+}
+
+impl From<CoreError> for ApiError {
+    fn from(e: CoreError) -> Self {
+        match e {
+            CoreError::NotFound(m) => ApiError::new(StatusCode::NOT_FOUND, m),
+            CoreError::InvalidArgument(m) => ApiError::new(StatusCode::BAD_REQUEST, m),
+            other => ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, other.to_string()),
+        }
+    }
+}
+
+impl IntoResponse for ApiError {
+    fn into_response(self) -> Response {
+        #[derive(Serialize)]
+        struct Body {
+            error: String,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            position: Option<usize>,
+        }
+        (
+            self.status,
+            Json(Body {
+                error: self.message,
+                position: self.position,
+            }),
+        )
+            .into_response()
+    }
+}
+
+type ApiResult<T> = Result<Json<T>, ApiError>;
+
+/// The router: the API plus the embedded web app.
+pub fn router(state: Arc<AppState>) -> Router {
+    Router::new()
+        .route("/api/health", get(|| async { "ok" }))
+        .route("/api/meta", get(meta))
+        .route("/api/runs", get(runs))
+        .route("/api/runs/{id}", get(run).patch(patch_run))
+        .route("/api/runs/delete", post(delete_runs))
+        .route("/api/chart", post(chart))
+        .merge(evals_api::routes())
+        .merge(traces_api::routes())
+        .fallback(asset)
+        .layer(tower_http::compression::CompressionLayer::new())
+        .with_state(state)
+}
+
+/// Options for [`serve`].
+pub struct ServeOptions {
+    pub addr: SocketAddr,
+    /// Answer only requests addressed to a loopback host name, against DNS rebinding.
+    pub local_only: bool,
+    /// Optimize storage (sort points by series, index them) every `optimize_every`, in the
+    /// background.
+    pub optimize: bool,
+    /// How often; [`OPTIMIZE_EVERY`] by default.
+    pub optimize_every: Duration,
+    /// Optimize once before the first catalog refresh as well.
+    pub optimize_at_start: bool,
+}
+
+async fn optimize(state: &AppState) {
+    let started = std::time::Instant::now();
+    match state.catalog.store().optimize().await {
+        Ok(()) => tracing::info!(
+            seconds = started.elapsed().as_secs_f64(),
+            "storage compacted"
+        ),
+        Err(e) => tracing::warn!(error = %e, "storage compaction failed"),
+    }
+    // On a large heap trimming can take tens to hundreds of milliseconds: keep it off the
+    // request-serving threads.
+    if let Err(e) = tokio::task::spawn_blocking(release_memory).await {
+        tracing::warn!(error = %e, "returning memory to the system failed");
+    }
+}
+
+/// Hands memory freed by an optimize back to the system. glibc's allocator keeps it mapped
+/// otherwise, and the server would stay at the optimize's peak (docs/architecture.md, "Memory").
+fn release_memory() {
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    // SAFETY: malloc_trim only returns free heap memory to the system; it takes no pointers.
+    unsafe {
+        libc::malloc_trim(0);
+    }
+}
+
+/// Serves until Ctrl-C. Refreshes the catalog before listening and then in the background.
+pub async fn serve(
+    state: Arc<AppState>,
+    opts: ServeOptions,
+    ready: impl FnOnce(SocketAddr),
+) -> std::io::Result<()> {
+    if opts.optimize_at_start {
+        optimize(&state).await;
+    }
+    if opts.optimize {
+        let (bg, every) = (state.clone(), opts.optimize_every);
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(every).await;
+                optimize(&bg).await;
+            }
+        });
+    }
+    if let Err(e) = state.catalog.refresh().await {
+        tracing::warn!(error = %e, "initial catalog refresh failed");
+    }
+    scheduler::start(state.clone());
+    monitor::start(state.clone());
+    let bg = state.clone();
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(REFRESH_EVERY).await;
+            if let Err(e) = bg.catalog.refresh().await {
+                tracing::warn!(error = %e, "catalog refresh failed");
+            }
+        }
+    });
+    let mut app = router(state);
+    if opts.local_only {
+        app = app.layer(axum::middleware::from_fn(local_only));
+    }
+    let listener = tokio::net::TcpListener::bind(opts.addr).await?;
+    ready(listener.local_addr()?);
+    axum::serve(listener, app)
+        .with_graceful_shutdown(async {
+            let _ = tokio::signal::ctrl_c().await;
+        })
+        .await
+}
+
+/// Rejects requests whose `Host` is not loopback, so a DNS-rebinding page cannot read the API.
+async fn local_only(req: axum::extract::Request, next: axum::middleware::Next) -> Response {
+    let host = req
+        .headers()
+        .get(header::HOST)
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or("");
+    let name = match host.rsplit_once(':') {
+        Some((h, p)) if p.chars().all(|c| c.is_ascii_digit()) => h,
+        _ => host,
+    };
+    if matches!(name, "127.0.0.1" | "localhost" | "[::1]") {
+        next.run(req).await
+    } else {
+        (
+            StatusCode::FORBIDDEN,
+            "vigily answers on localhost only; start it with --host to serve other names",
+        )
+            .into_response()
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Types
+
+/// A run as a row of the runs table.
+#[derive(Serialize)]
+pub struct RunRow {
+    pub id: String,
+    /// The name, or the start of the id when the run has none.
+    pub name: String,
+    pub has_name: bool,
+    pub experiment: Option<String>,
+    pub description: Option<String>,
+    pub tags: Vec<String>,
+    pub status: RunStatus,
+    /// `training`, `eval` or another kind.
+    pub kind: String,
+    /// The target reference (model, prompt, endpoint, git sha), or null.
+    pub target: Value,
+    pub archived: bool,
+    pub created_at: i64,
+    pub updated_at: i64,
+    pub ended_at: Option<i64>,
+    /// The last sign of life: a heartbeat, metadata write or point (microseconds, UTC).
+    pub last_seen: i64,
+    /// Running, but nothing heard for 10 minutes: the process most likely died.
+    pub stale: bool,
+    /// Seconds, up to now for running runs.
+    pub duration: f64,
+    pub params: BTreeMap<String, Value>,
+    pub metrics: BTreeMap<String, MetricStat>,
+}
+
+/// The statistics of one series shown in the runs table.
+#[derive(Serialize)]
+pub struct MetricStat {
+    pub last: Option<f64>,
+    pub min: Option<f64>,
+    pub max: Option<f64>,
+    pub count: u64,
+    pub last_step: Option<i64>,
+    pub min_step: Option<i64>,
+    pub max_step: Option<i64>,
+}
+
+impl From<&Summary> for MetricStat {
+    fn from(s: &Summary) -> Self {
+        Self {
+            last: s.last,
+            min: s.min,
+            max: s.max,
+            count: s.count,
+            last_step: s.last_step,
+            min_step: s.min_step,
+            max_step: s.max_step,
+        }
+    }
+}
+
+fn row(e: &RunEntry, now: i64) -> RunRow {
+    let r = &e.run;
+    RunRow {
+        id: r.id.clone(),
+        name: r.display_name(),
+        has_name: r.name.is_some(),
+        experiment: r.experiment.clone(),
+        description: r.description.clone(),
+        tags: r.tags.clone(),
+        status: r.status,
+        kind: e.kind().to_string(),
+        target: e.target(),
+        archived: r.archived,
+        created_at: r.created_at,
+        updated_at: r.updated_at,
+        ended_at: r.ended_at,
+        last_seen: e.last_seen(),
+        stale: e.stale(now),
+        duration: r.duration_secs(now),
+        params: e.flat.clone(),
+        metrics: e
+            .series
+            .iter()
+            .map(|s| (s.key.clone(), MetricStat::from(&s.summary)))
+            .collect(),
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Handlers
+
+#[derive(Serialize)]
+struct Meta {
+    version: &'static str,
+    repository: String,
+    runs: usize,
+    running: usize,
+    archived: usize,
+    /// Runs per kind.
+    kinds: BTreeMap<String, usize>,
+    datasets: usize,
+    schedules: usize,
+    open_alerts: usize,
+    traces: usize,
+    refreshed_at: i64,
+    experiments: Vec<vigily_core::catalog::ExperimentInfo>,
+    metrics: Vec<vigily_core::catalog::MetricInfo>,
+    params: Vec<vigily_core::catalog::ParamInfo>,
+}
+
+async fn meta(State(s): State<Arc<AppState>>) -> ApiResult<Meta> {
+    let snap = s.catalog.refresh_if_older(1_000_000).await?;
+    Ok(Json(Meta {
+        version: s.version,
+        repository: s.catalog.store().location(),
+        runs: snap.runs.len(),
+        running: snap
+            .runs
+            .iter()
+            .filter(|e| e.run.status == RunStatus::Running)
+            .count(),
+        archived: snap.runs.iter().filter(|e| e.run.archived).count(),
+        kinds: snap.runs.iter().fold(BTreeMap::new(), |mut m, e| {
+            *m.entry(e.kind().to_string()).or_insert(0) += 1;
+            m
+        }),
+        datasets: s.records.scan("ds/").await?.len(),
+        schedules: s.config.schedule.len(),
+        open_alerts: vigily_core::evals::alerts(&*s.records)
+            .await?
+            .iter()
+            .filter(|a| a.acknowledged_at.is_none())
+            .count(),
+        traces: traces_api::count(&s).await?,
+        refreshed_at: snap.refreshed_at,
+        experiments: snap.experiments(),
+        metrics: snap.metric_keys(),
+        params: snap.param_keys(),
+    }))
+}
+
+#[derive(Deserialize)]
+struct RunsParams {
+    #[serde(default)]
+    q: String,
+    sort: Option<String>,
+    #[serde(default)]
+    desc: bool,
+    #[serde(default)]
+    archived: bool,
+}
+
+#[derive(Serialize)]
+struct RunsResponse {
+    total: usize,
+    rows: Vec<RunRow>,
+    refreshed_at: i64,
+}
+
+async fn runs(
+    State(s): State<Arc<AppState>>,
+    QueryParams(p): QueryParams<RunsParams>,
+) -> ApiResult<RunsResponse> {
+    if p.q.len() > MAX_QUERY {
+        return Err(ApiError::new(
+            StatusCode::BAD_REQUEST,
+            format!(
+                "the filter is longer than {} KiB; shorten it",
+                MAX_QUERY / 1024
+            ),
+        ));
+    }
+    let query = Query::parse(&p.q).map_err(|e| ApiError {
+        status: StatusCode::BAD_REQUEST,
+        message: e.message.clone(),
+        position: Some(e.position),
+    })?;
+    if let Some(sort) = &p.sort {
+        if Column::parse(sort).is_none() {
+            return Err(ApiError::new(
+                StatusCode::BAD_REQUEST,
+                format!("unknown sort column {sort:?}; use run:name, param:<key> or metric:<last|min|max>:<metric>"),
+            ));
+        }
+    }
+    let snap = s.catalog.refresh_if_older(1_000_000).await?;
+    let now = vigily_core::now_micros();
+    let rows = snap
+        .select(&query, p.sort.as_deref(), p.desc, p.archived)
+        .iter()
+        .map(|e| row(e, now))
+        .collect();
+    Ok(Json(RunsResponse {
+        total: snap.runs.len(),
+        rows,
+        refreshed_at: snap.refreshed_at,
+    }))
+}
+
+#[derive(Serialize)]
+struct RunDetail {
+    #[serde(flatten)]
+    row: RunRow,
+    params_tree: Value,
+    series: Vec<vigily_core::catalog::SeriesEntry>,
+}
+
+async fn run(State(s): State<Arc<AppState>>, Path(id): Path<String>) -> ApiResult<RunDetail> {
+    let snap = s.catalog.refresh_if_older(1_000_000).await?;
+    let e = snap
+        .get(&id)
+        .ok_or_else(|| ApiError::new(StatusCode::NOT_FOUND, format!("no run with id {id}")))?;
+    Ok(Json(RunDetail {
+        row: row(e, vigily_core::now_micros()),
+        params_tree: e.params.clone(),
+        series: e.series.clone(),
+    }))
+}
+
+async fn patch_run(
+    State(s): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(patch): Json<RunPatch>,
+) -> ApiResult<RunRow> {
+    if patch.created_at.is_some() || patch.ended_at.is_some() {
+        return Err(ApiError::new(
+            StatusCode::BAD_REQUEST,
+            "times are written by the training script; change name, experiment, description, tags or archived",
+        ));
+    }
+    let snap = s.catalog.refresh().await?;
+    let mut patch = patch;
+    match patch.status {
+        None => {}
+        // A run whose process died stays running; it can be marked aborted once it is stale.
+        Some(RunStatus::Aborted) => {
+            let e = snap.get(&id).ok_or_else(|| {
+                ApiError::new(StatusCode::NOT_FOUND, format!("no run with id {id}"))
+            })?;
+            if !e.stale(vigily_core::now_micros()) {
+                return Err(ApiError::new(
+                    StatusCode::CONFLICT,
+                    "only a running run with no heartbeat for 10 minutes can be marked aborted",
+                ));
+            }
+            patch.ended_at = Some(e.last_seen());
+        }
+        Some(_) => {
+            return Err(ApiError::new(
+                StatusCode::BAD_REQUEST,
+                "the status is written by the training script; a stale run can be marked aborted",
+            ))
+        }
+    }
+    s.catalog.store().update_run(&id, patch).await?;
+    let snap = s.catalog.refresh().await?;
+    let e = snap
+        .get(&id)
+        .ok_or_else(|| ApiError::new(StatusCode::NOT_FOUND, format!("no run with id {id}")))?;
+    Ok(Json(row(e, vigily_core::now_micros())))
+}
+
+#[derive(Deserialize)]
+struct DeleteRuns {
+    ids: Vec<String>,
+}
+
+#[derive(Serialize)]
+struct Deleted {
+    deleted: usize,
+}
+
+/// Deletes finished, failed or aborted runs with their parameters, series, points and evaluation
+/// records. A running run is refused: its writer would keep writing to it, so it must be stopped
+/// (finished or aborted) first.
+async fn delete_runs(
+    State(s): State<Arc<AppState>>,
+    Json(req): Json<DeleteRuns>,
+) -> ApiResult<Deleted> {
+    if req.ids.is_empty() || req.ids.len() > 10_000 {
+        return Err(ApiError::new(
+            StatusCode::BAD_REQUEST,
+            "give between 1 and 10 000 run ids",
+        ));
+    }
+    let snap = s.catalog.refresh().await?;
+    let mut running = Vec::new();
+    for id in &req.ids {
+        match snap.get(id) {
+            None => {
+                return Err(ApiError::new(
+                    StatusCode::NOT_FOUND,
+                    format!("no run with id {id}"),
+                ))
+            }
+            Some(e) if e.run.status == RunStatus::Running => running.push(e.run.display_name()),
+            Some(_) => {}
+        }
+    }
+    if !running.is_empty() {
+        return Err(ApiError::new(
+            StatusCode::CONFLICT,
+            format!(
+                "{} still running ({}); a running run can be deleted once its script finishes, or once it is marked aborted after its heartbeat stops",
+                if running.len() == 1 { "1 run is" } else { "some runs are" },
+                running.iter().take(3).cloned().collect::<Vec<_>>().join(", ")
+            ),
+        ));
+    }
+    let deleted = s.catalog.store().delete_runs(&req.ids).await?;
+    // Their traces went with them.
+    *s.traces_count.lock() = None;
+    *s.traces_cache.lock() = None;
+    s.catalog.refresh().await?;
+    tracing::info!(deleted, "deleted runs");
+    Ok(Json(Deleted { deleted }))
+}
+
+fn default_points() -> usize {
+    800
+}
+
+#[derive(Deserialize)]
+struct ChartRequest {
+    runs: Vec<String>,
+    /// A metric key: `loss` or `loss[val]`.
+    metric: String,
+    #[serde(default)]
+    x: XAxis,
+    /// Zoom: the visible x range.
+    range: Option<[f64; 2]>,
+    /// The chart's width in pixels; the response has at most about twice as many x values.
+    #[serde(default = "default_points")]
+    points: usize,
+    /// A column id; runs with the same value form a group.
+    group_by: Option<String>,
+    /// Draw each group as a mean with a min-max band instead of one line per run.
+    #[serde(default)]
+    aggregate: bool,
+}
+
+#[derive(Serialize)]
+struct ChartSeries {
+    run_id: String,
+    name: String,
+    group: Option<String>,
+    y: Vec<Option<f64>>,
+    /// The last finite point in the visible range, `[x, y]`: the downsampled line may end on a
+    /// bucket's minimum or maximum rather than on it.
+    last: Option<[f64; 2]>,
+}
+
+fn last_point(xy: &Xy, range: Option<(f64, f64)>) -> Option<[f64; 2]> {
+    let hi = range.map_or(f64::INFINITY, |r| r.1);
+    let lo = range.map_or(f64::NEG_INFINITY, |r| r.0);
+    xy.x.iter()
+        .zip(&xy.y)
+        .rev()
+        .find(|(x, y)| **x <= hi && **x >= lo && y.is_finite())
+        .map(|(x, y)| [*x, *y])
+}
+
+#[derive(Serialize)]
+struct ChartGroup {
+    label: String,
+    runs: usize,
+    #[serde(flatten)]
+    band: Band,
+}
+
+#[derive(Serialize)]
+struct ChartResponse {
+    metric: String,
+    x_axis: XAxis,
+    x: Vec<f64>,
+    exact: bool,
+    /// The full x range of the data, to reset a zoom.
+    domain: Option<[f64; 2]>,
+    series: Vec<ChartSeries>,
+    groups: Vec<ChartGroup>,
+    /// Requested runs that do not log this metric.
+    missing: Vec<String>,
+}
+
+fn label(v: &vigily_core::query::Val) -> String {
+    use vigily_core::query::Val;
+    match v {
+        Val::Null => "(none)".into(),
+        Val::Num(n) => {
+            let s = format!("{n}");
+            if s.len() > 12 {
+                format!("{n:.6e}")
+            } else {
+                s
+            }
+        }
+        Val::Str(s) => s.clone(),
+        Val::Bool(b) => b.to_string(),
+    }
+}
+
+async fn chart(
+    State(s): State<Arc<AppState>>,
+    Json(req): Json<ChartRequest>,
+) -> ApiResult<ChartResponse> {
+    if req.runs.len() > 2_000 {
+        return Err(ApiError::new(
+            StatusCode::BAD_REQUEST,
+            "a chart takes at most 2 000 runs; narrow the selection",
+        ));
+    }
+    let points = req.points.clamp(16, 4_000);
+    let group_col = match &req.group_by {
+        Some(g) => Some(Column::parse(g).ok_or_else(|| {
+            ApiError::new(StatusCode::BAD_REQUEST, format!("unknown column {g:?}"))
+        })?),
+        None => None,
+    };
+    let snap = s.catalog.refresh_if_older(1_000_000).await?;
+    let now = vigily_core::now_micros();
+
+    // (entry, series id, summary count, finished)
+    let mut found: Vec<(Arc<RunEntry>, u64, u64, bool)> = Vec::new();
+    let mut missing = Vec::new();
+    for id in &req.runs {
+        match snap
+            .get(id)
+            .and_then(|e| e.series_by_key(&req.metric).map(|x| (e, x)))
+        {
+            Some((e, x)) => found.push((
+                e.clone(),
+                x.series.id,
+                x.summary.count,
+                e.run.status != RunStatus::Running,
+            )),
+            None => missing.push(id.clone()),
+        }
+    }
+
+    // Raw points: from the cache for finished series, from storage for the rest.
+    let mut raw: HashMap<u64, Arc<Points>> = HashMap::new();
+    let mut to_read = Vec::new();
+    {
+        let cache = s.cache.lock();
+        for (_, sid, count, done) in &found {
+            match cache.get(*sid, *count).filter(|_| *done) {
+                Some(p) => {
+                    raw.insert(*sid, p);
+                }
+                None => to_read.push(*sid),
+            }
+        }
+    }
+    for chunk in to_read.chunks(512) {
+        let read = s
+            .catalog
+            .store()
+            .points(chunk, StepRange::default())
+            .await?;
+        let mut cache = s.cache.lock();
+        for (sid, p) in read {
+            let p = Arc::new(p);
+            if let Some((_, _, count, true)) = found.iter().find(|f| f.1 == sid) {
+                cache.put(sid, *count, p.clone());
+            }
+            raw.insert(sid, p);
+        }
+    }
+
+    let empty = Arc::new(Points::default());
+    let xys: Vec<Xy> = found
+        .iter()
+        .map(|(e, sid, _, _)| {
+            let p = raw.get(sid).unwrap_or(&empty);
+            Xy::new(x_values(p, req.x, e.run.created_at), &p.values)
+        })
+        .collect();
+    let full = vigily_core::chart::domain(&xys, None).map(|(a, b)| [a, b]);
+    let range = req.range.map(|[a, b]| (a, b));
+    let groups_of: Vec<Option<String>> = found
+        .iter()
+        .map(|(e, ..)| group_col.as_ref().map(|c| label(&c.value(e, now))))
+        .collect();
+
+    if req.aggregate {
+        let mut order: Vec<String> = Vec::new();
+        let mut members: HashMap<String, Vec<Xy>> = HashMap::new();
+        for (xy, g) in xys.into_iter().zip(&groups_of) {
+            let g = g.clone().unwrap_or_else(|| "All runs".into());
+            if !members.contains_key(&g) {
+                order.push(g.clone());
+            }
+            members.entry(g).or_default().push(xy);
+        }
+        order.sort_by(|a, b| natural_cmp(a, b));
+        let sets: Vec<Vec<Xy>> = order
+            .iter()
+            .map(|g| members.remove(g).unwrap_or_default())
+            .collect();
+        let sizes: Vec<usize> = sets.iter().map(Vec::len).collect();
+        let (x, bands) = aggregate(&sets, range, points);
+        return Ok(Json(ChartResponse {
+            metric: req.metric,
+            x_axis: req.x,
+            x,
+            exact: false,
+            domain: full,
+            series: vec![],
+            groups: order
+                .into_iter()
+                .zip(bands)
+                .zip(sizes)
+                .map(|((label, band), runs)| ChartGroup { label, runs, band })
+                .collect(),
+            missing,
+        }));
+    }
+
+    let lasts: Vec<Option<[f64; 2]>> = xys.iter().map(|xy| last_point(xy, range)).collect();
+    let aligned = align(&xys, range, points);
+    Ok(Json(ChartResponse {
+        metric: req.metric,
+        x_axis: req.x,
+        x: aligned.x,
+        exact: aligned.exact,
+        domain: full,
+        series: found
+            .iter()
+            .zip(aligned.ys)
+            .zip(groups_of)
+            .zip(lasts)
+            .map(|((((e, ..), y), group), last)| ChartSeries {
+                run_id: e.run.id.clone(),
+                name: e.run.display_name(),
+                group,
+                y,
+                last,
+            })
+            .collect(),
+        groups: vec![],
+        missing,
+    }))
+}
+
+fn natural_cmp(a: &str, b: &str) -> std::cmp::Ordering {
+    match (a.parse::<f64>(), b.parse::<f64>()) {
+        (Ok(x), Ok(y)) => x.total_cmp(&y),
+        _ => a.to_lowercase().cmp(&b.to_lowercase()),
+    }
+}
+
+/// The embedded web app: a file by path, or `index.html` for client-side routes.
+async fn asset(uri: axum::http::Uri) -> Response {
+    let path = uri.path().trim_start_matches('/');
+    let find = |p: &str| {
+        vigily_ui::ASSETS
+            .iter()
+            .find(|(n, _)| *n == p)
+            .map(|(_, b)| *b)
+    };
+    let (name, body) = match find(path) {
+        Some(b) if !path.is_empty() => (path, b),
+        _ if path.starts_with("api/") => {
+            return ApiError::new(StatusCode::NOT_FOUND, format!("no such endpoint: /{path}"))
+                .into_response();
+        }
+        _ if path.starts_with("assets/") => {
+            return (StatusCode::NOT_FOUND, "not found").into_response();
+        }
+        _ => ("index.html", find("index.html").unwrap_or_default()),
+    };
+    let mime = match name.rsplit('.').next() {
+        Some("html") => "text/html; charset=utf-8",
+        Some("js") => "text/javascript",
+        Some("css") => "text/css",
+        Some("svg") => "image/svg+xml",
+        Some("png") => "image/png",
+        Some("json") => "application/json",
+        Some("woff2") => "font/woff2",
+        Some("woff") => "font/woff",
+        Some("txt") => "text/plain; charset=utf-8",
+        _ => "application/octet-stream",
+    };
+    // Bundled assets carry a content hash in their name; the page itself must stay fresh.
+    let cache = if name.starts_with("assets/") {
+        "public, max-age=31536000, immutable"
+    } else {
+        "no-cache"
+    };
+    (
+        StatusCode::OK,
+        [
+            (header::CONTENT_TYPE, mime),
+            (header::CACHE_CONTROL, cache),
+            (header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
+        ],
+        body,
+    )
+        .into_response()
+}

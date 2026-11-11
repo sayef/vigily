@@ -1,0 +1,54 @@
+name: Portability
+
+# Runs a release's Linux binaries on older and current distributions, to confirm the glibc floor
+# (the release builds on Debian 11, glibc 2.31). Callable from the release workflow, or by hand.
+on:
+  workflow_call:
+    inputs:
+      tag:
+        type: string
+        required: true
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to test, such as v0.1.0
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ["ubuntu:20.04", "ubuntu:22.04", "ubuntu:24.04", "debian:11", "debian:12", "rockylinux:9"]
+        runner: [ubuntu-latest, ubuntu-24.04-arm]
+    name: ${{ matrix.image }} on ${{ matrix.runner }}
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Download the release binary
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          target="$(uname -m)-unknown-linux-gnu"
+          gh release download "$TAG" -p "vigily-$target.tar.gz" -p "vigily-$target.tar.gz.sha256"
+          sha256sum -c "vigily-$target.tar.gz.sha256"
+          tar xzf "vigily-$target.tar.gz"
+      - name: Run it on ${{ matrix.image }}
+        env:
+          IMAGE: ${{ matrix.image }}
+        run: |
+          docker run --rm -v "$PWD/vigily:/usr/local/bin/vigily:ro" "$IMAGE" vigily --version
+          docker run -d --name smoke -p 127.0.0.1:7600:7600 -v "$PWD/vigily:/usr/local/bin/vigily:ro" \
+            "$IMAGE" vigily --repo /tmp/repo up --host 0.0.0.0
+          ok=
+          for _ in $(seq 30); do
+            if curl -fsS http://127.0.0.1:7600/api/health; then ok=1; break; fi
+            sleep 1
+          done
+          docker logs smoke
+          docker rm -f smoke
+          [ -n "$ok" ]

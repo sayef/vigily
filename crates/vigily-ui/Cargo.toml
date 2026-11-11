@@ -1,0 +1,16 @@
+[package]
+name = "vigily-ui"
+description = "vigily's web app, built with Vite and embedded into the binary"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+build = "build.rs"
+# An allowlist, so the git-ignored `dist` (built before packaging) ships in the crate.
+include = ["/build.rs", "/lib.rs", "/dist/**", "/Cargo.toml"]
+
+[lib]
+path = "lib.rs"

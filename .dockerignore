@@ -1,0 +1,14 @@
+target
+**/node_modules
+crates/vigily-ui/dist
+**/*.tsbuildinfo
+.venv
+site
+.git
+.vigily
+.pytest_cache
+.ruff_cache
+**/__pycache__
+**/*.so
+**/.DS_Store
+vigily-data

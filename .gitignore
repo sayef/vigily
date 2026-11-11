@@ -1,0 +1,16 @@
+/target
+**/node_modules/
+crates/vigily-ui/dist/
+*.tsbuildinfo
+__pycache__/
+*.py[cod]
+.venv/
+*.so
+*.pyd
+.pytest_cache/
+.ruff_cache/
+/.vigily/
+/site/
+.DS_Store
+/dist/
+/vigily-data/

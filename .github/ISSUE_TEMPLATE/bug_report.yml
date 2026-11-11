@@ -1,0 +1,26 @@
+name: Bug report
+description: Something in vigily does not work as described
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How to reproduce
+      description: The smallest script or steps that show the problem. Use synthetic data only.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Output of `vigily --version` and `python -c "import vigily; print(vigily.__version__)"`
+  - type: input
+    id: platform
+    attributes:
+      label: Platform
+      description: Operating system, Python version, storage (local directory, S3, GCS, Azure)

@@ -1,0 +1,14 @@
+# Builds the image from this checkout, for development:
+#   GH_TOKEN=$(gh auth token) docker compose -f compose.yaml -f compose.dev.yaml up -d --build
+# Building needs read access to kv0, a private git dependency for now. The token reaches only the
+# dependency fetch (a BuildKit secret) and is not stored in the image.
+services:
+  vigily:
+    image: vigily:local
+    build:
+      context: .
+      secrets: [gh_token]
+
+secrets:
+  gh_token:
+    environment: GH_TOKEN

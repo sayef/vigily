@@ -1,0 +1,34 @@
+# Spell check (https://github.com/crate-ci/typos): `typos` from the repository root.
+[files]
+extend-exclude = [
+    # Lockfiles: package names and hashes, not prose.
+    "Cargo.lock",
+    "uv.lock",
+    "crates/vigily-ui/package-lock.json",
+    # Fonts and their licence text, generated SVG artwork, screenshots and other images.
+    "docs/assets/fonts/",
+    "*.svg",
+    "*.png",
+    "*.woff2",
+    # Build output.
+    "crates/vigily-ui/dist/",
+    "target/",
+    "site/",
+]
+
+[default]
+extend-ignore-re = [
+    # Hex identifiers (trace and span IDs in test fixtures, hashes).
+    "\\b[0-9a-f]{16,}\\b",
+    # CSS `unicode-range` values such as U+0100-02BA.
+    "U\\+[0-9A-Fa-f]{4,6}(-[0-9A-Fa-f]{4,6})?",
+    # Case-insensitive first letters in regexes, such as [Ss]upport in release-plz.toml.
+    "\\[[A-Z][a-z]\\][a-z]+",
+]
+
+[default.extend-words]
+# German and French sample inputs in the eval examples and their tests.
+ist = "ist"
+paket = "paket"
+produkt = "produkt"
+sur = "sur"

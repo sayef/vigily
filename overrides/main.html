@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+
+{% block extrahead %}
+{% if page %}
+  {% set title = config.site_name if page.is_homepage else page.title ~ " · " ~ config.site_name %}
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="{{ config.site_name }}">
+  <meta property="og:title" content="{{ title }}">
+  <meta property="og:description" content="{{ page.meta.description or config.site_description }}">
+  <meta property="og:image" content="{{ 'assets/social-preview.png' | url }}">
+  <meta property="og:image:width" content="1280">
+  <meta property="og:image:height" content="640">
+  <meta property="og:image:alt" content="vigily: keeps watch over your runs, evals and drift.">
+  <meta name="twitter:card" content="summary_large_image">
+{% endif %}
+{% endblock %}
+
+{% block tabs %}
+{{ super() }}
+<div class="vg-subline">
+  <div class="vg-subline__inner md-grid">
+    <span>
+      {%- if page and page.is_homepage -%}
+        Self-hosted experiment tracking, evaluation and drift monitoring
+      {%- elif page -%}
+        {% if page.parent %}{{ page.parent.title }} <span class="vg-subline__sep" aria-hidden="true">/</span> {% endif %}<b>{{ page.title }}</b>
+      {%- endif -%}
+    </span>
+    <span class="vg-subline__right">Built {{ build_date_utc.strftime("%-d %B %Y") }} · MIT License</span>
+  </div>
+</div>
+{% endblock %}

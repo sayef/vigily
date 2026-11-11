@@ -1,0 +1,70 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/vigily-core",
+    "crates/vigily-server",
+    "crates/vigily-ui",
+    "crates/vigily-cli",
+    "crates/vigily-py",
+]
+# The Python extension is built with maturin (`uv run maturin develop`).
+default-members = [
+    "crates/vigily-core",
+    "crates/vigily-server",
+    "crates/vigily-ui",
+    "crates/vigily-cli",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.94.1"
+license = "MIT"
+authors = ["Saiful Islam"]
+repository = "https://github.com/sayef/vigily"
+homepage = "https://github.com/sayef/vigily"
+
+[workspace.dependencies]
+vigily-core = { path = "crates/vigily-core", version = "0.1.0" }
+vigily-server = { path = "crates/vigily-server", version = "0.1.0" }
+vigily-ui = { path = "crates/vigily-ui", version = "0.1.0" }
+# Storage: kv0 (Lance tables on local disk or object storage). A git dependency on `main`, pinned
+# to an exact commit by Cargo.lock; `cargo update -p kv0` moves it. To build against a local kv0
+# checkout instead, see "Storage dependency" in CONTRIBUTING.md.
+# `version` is what crates.io uses once kv0 is published; until then Cargo builds from git.
+kv0 = { git = "https://github.com/sayef/kv0", branch = "main", version = "0.2", default-features = false }
+# Only in tests, to write a shared records table the way earlier builds did; the same versions
+# kv0 uses, so nothing extra is compiled.
+lance = { version = "14.0.2", default-features = false }
+arrow-array = "58"
+anyhow = "1"
+async-trait = "0.1"
+axum = { version = "0.8", default-features = false, features = ["http1", "json", "query", "tokio", "matched-path"] }
+clap = { version = "4", features = ["derive", "env"] }
+parking_lot = "0.12"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["float_roundtrip", "preserve_order"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "net", "signal", "process", "io-util"] }
+tower = { version = "0.5", default-features = false, features = ["util"] }
+tower-http = { version = "0.6", default-features = false, features = ["compression-gzip"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", default-features = false, features = ["std", "fmt", "env-filter", "ansi"] }
+tempfile = "3"
+sha2 = "0.10"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+chrono-tz = "0.10"
+croner = "2"
+toml = "0.8"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true
+
+# Keep target/ small: no debug info for third-party crates, line tables for ours.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
