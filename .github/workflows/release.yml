@@ -253,7 +253,9 @@ jobs:
       github.repository_owner == 'sayef' && vars.RELEASE_ENABLED == 'true'
       && needs.tag.outputs.tag != ''
     runs-on: ubuntu-latest
-    environment: pypi
+    # Its own environment: PyPI refuses a second pending publisher with the same repository,
+    # workflow and environment as the vigily project's.
+    environment: pypi-engine
     permissions:
       id-token: write
     steps:
