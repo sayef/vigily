@@ -24,10 +24,19 @@ classifiers = [
 dependencies = []
 dynamic = ["version"]
 
+[project.optional-dependencies]
+# The engine for this machine (a platform wheel holding the vigily-engine binary), which the SDK
+# starts in the background when no engine serves the repository.
+local = ["vigily-engine>=0.1.0b1,<0.2"]
+
 [project.urls]
 Homepage = "https://github.com/sayef/vigily"
 Issues = "https://github.com/sayef/vigily/issues"
 Changelog = "https://github.com/sayef/vigily/blob/main/CHANGELOG.md"
+
+# In this repository, `uv sync --extra local` builds the engine wheel from the checkout.
+[tool.uv.sources]
+vigily-engine = { path = "crates/vigily-server" }
 
 [dependency-groups]
 dev = ["pytest>=8", "ruff>=0.6"]
