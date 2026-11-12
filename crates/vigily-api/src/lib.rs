@@ -8,12 +8,14 @@
 //!
 //! - [`model`]: runs, parameters, metric series, summaries and metric keys (`loss[val]`).
 //! - [`catalog`]: series with their statistics; experiments, metric and parameter keys.
-//! - [`runs`]: rows of the runs table, a run's detail, the repository summary, run deletion.
+//! - [`runs`]: rows of the runs table, a run's detail, the repository summary, run deletion, and
+//!   creating, resuming and finishing a run.
 //! - [`chart`]: the x axis, aligned series, group bands, and the chart request and answer.
 //! - [`evals`]: datasets, results, labels, feature samples, schedules, alerts, baselines and the
 //!   answers of their routes.
 //! - [`drift`]: suites and the behaviour- and data-drift verdicts.
 //! - [`traces`]: spans, trace summaries, the payload policy, and the traces list and detail.
+//! - [`ingest`]: the batches of operations a client writes runs with, and their reports.
 //!
 //! The wire format is pinned by golden JSON files in `tests/fixtures`: every answer type reads
 //! its fixture and writes it back unchanged, keys in the same order.
@@ -22,6 +24,7 @@ pub mod catalog;
 pub mod chart;
 pub mod drift;
 pub mod evals;
+pub mod ingest;
 pub mod model;
 pub mod runs;
 pub mod traces;

@@ -5,7 +5,7 @@
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::Value;
-use vigily_api::{chart, evals, runs, traces};
+use vigily_api::{chart, evals, ingest, runs, traces};
 
 fn fixture(name: &str) -> Value {
     let path = format!("{}/tests/fixtures/{name}.json", env!("CARGO_MANIFEST_DIR"));
@@ -86,4 +86,13 @@ fn v1_answers_keep_their_wire_shape() {
     same::<traces::TracesDeleted>("traces_deleted");
     same::<evals::ScheduleRunStarted>("schedule_run_started");
     same::<vigily_api::ErrorBody>("error_tag_blocks_purge");
+}
+
+#[test]
+fn writes_keep_their_wire_shape() {
+    same::<runs::CreatedRun>("created_run");
+    same::<runs::ResumedRun>("resumed_run");
+    same::<ingest::IngestBatch>("ingest_batch");
+    same::<ingest::IngestReport>("ingest_report");
+    same::<evals::CommitDataset>("dataset_commit");
 }

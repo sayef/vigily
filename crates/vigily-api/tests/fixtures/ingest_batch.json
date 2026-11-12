@@ -1,0 +1,74 @@
+{
+  "writer": "0190a0b0c0d07e0f8a9b0c1d2e3f4a60",
+  "seq": 1,
+  "ops": [
+    {
+      "op": "create",
+      "id": "0190a0b0c0d07e0f8a9b0c1d2e3f4a5b",
+      "name": "baseline",
+      "tags": [
+        "lr"
+      ],
+      "created_at": 1700000000000000
+    },
+    {
+      "op": "params",
+      "run_id": "0190a0b0c0d07e0f8a9b0c1d2e3f4a5b",
+      "params": {
+        "hparams": {
+          "lr": 0.1
+        }
+      }
+    },
+    {
+      "op": "points",
+      "run_id": "0190a0b0c0d07e0f8a9b0c1d2e3f4a5b",
+      "name": "loss",
+      "context": {
+        "subset": "train"
+      },
+      "key": "",
+      "steps": [
+        0,
+        1,
+        2
+      ],
+      "values": [
+        0.5,
+        "NaN",
+        "Infinity"
+      ],
+      "epochs": [],
+      "timestamps": [
+        1700000000000001,
+        1700000000000002,
+        1700000000000003
+      ]
+    },
+    {
+      "op": "update",
+      "run_id": "0190a0b0c0d07e0f8a9b0c1d2e3f4a5b",
+      "patch": {
+        "description": "first try"
+      }
+    },
+    {
+      "op": "heartbeat",
+      "run_id": "0190a0b0c0d07e0f8a9b0c1d2e3f4a5b"
+    },
+    {
+      "op": "results",
+      "results": []
+    },
+    {
+      "op": "features",
+      "samples": []
+    },
+    {
+      "op": "finish",
+      "run_id": "0190a0b0c0d07e0f8a9b0c1d2e3f4a5b",
+      "status": "finished",
+      "ended_at": 1700000060000000
+    }
+  ]
+}
