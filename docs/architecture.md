@@ -33,7 +33,7 @@ The tests run against engines in `crates/vigily-server/tests/client.rs`.
 | Module | What it holds |
 |---|---|
 | `model.rs` | Re-exports the run model from `vigily-api`: `Run`, `RunStatus`, `RunPatch`, `Series`, `Points`, `Summary`, metric keys (`loss[val]`), JSON flattening |
-| `store.rs` | The `Store` and `RunWriter` traits; `RunWriter::track_batch` writes one series' points given in columns (a loop over `track` until kv0 has `track_many`, docs/kv0-requests.md item 24) |
+| `store.rs` | The `Store` and `RunWriter` traits; `RunWriter::track_batch` writes one series' points given in columns (the kv0 store hands them to kv0's `Run::track_many`: one lock and one log append per batch) |
 | `memory.rs` | `MemoryStore`, used by the tests |
 | `kv0_store.rs` | `Kv0Store`, the adapter to `kv0::tracking` |
 | `catalog.rs` | `Catalog` and `Snapshot`: the in-memory index of runs, flattened parameters and series summaries; experiments, metric and parameter key lists; `select` (filter and sort); column ids |
@@ -130,7 +130,9 @@ report (`replayed: true`) without applying it again.
 Open run writers live in a registry, closed when a run finishes or is deleted, after 15 minutes
 without writes, or least recently used beyond 4096. Any operation on a run counts as its
 heartbeat; the engine stores at most one heartbeat row per run every two minutes. After a write
-the background catalog refresh runs at once instead of waiting for its 2-second tick.
+the background catalog refresh runs at once instead of waiting for its 2-second tick, after
+committing buffered points to storage (at most once a second), so new points are readable in the
+web app within about a second of arriving.
 
 Write bodies may be gzip-compressed (`Content-Encoding: gzip`) and are limited to 32 MiB after
 decompression (413 `too_large`). Ingest bodies in flight share a 256 MiB budget; above it ingest
@@ -277,3 +279,27 @@ Decisions, from these numbers:
 Before kv0's tracking additions (per-run reads, statistics computed from every point, no automatic
 compaction), the same repository took 250 to 386 s to start uncompacted and 10.4 s after
 `vigily optimize`, and logging it took 27 minutes.
+
+## Ingest benchmark
+
+`bench/ingest.py` starts an engine (or uses `--url`), runs N processes that each log R runs of P
+points with `Run.track`, and waits for `vigily.flush()`. `bench/compare.sh [base]` runs it against
+an engine built from another commit and against this checkout's. Release builds, 20-core Linux
+workstation, 8 processes × 4 runs × 100 000 points (3.2 million), the SDK and engine on the same
+machine; the base is the engine before kv0's `track_many`:
+
+| | Before `track_many` | With `track_many` | Target |
+|---|---|---|---|
+| `track()` p50 / p99 | 0.95 / 2.91 µs | 0.96 / 2.65 µs | p50 ≤ 1.5 µs |
+| Points per second per process, while tracking | 816 000 | 758 000 | ≥ 300 000 |
+| Points per second for the engine, until every flush returned | 198 000 | 1 350 000 | ≥ 1 000 000 |
+| Engine CPU time | 44.7 s | 3.5 s | |
+| Engine peak RSS | 799 MB | 686 MB | |
+| Time until 10 000 new points are readable (no flush) | 4.1 s | 1.8 s | ≤ 3 s |
+
+One process alone sends about 300 000 points per second end to end (940 000 while tracking);
+the sender thread compresses and posts the batches, so one process gains little from a faster
+engine. `bench/scale.py` (2 000 runs one after another, 4.8 million points) takes 112 s from the
+first run until the last flush returns (107 s with the embedded SDK of earlier builds), and the
+engine serving it afterwards uses 211 MB. Most of that time goes to finishing runs: kv0 commits
+everything buffered when a run finishes, once per run.

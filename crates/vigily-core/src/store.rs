@@ -121,6 +121,30 @@ pub trait Store: Send + Sync + 'static {
     async fn close(&self) -> Result<()>;
 }
 
+/// Checks that the columns of [`RunWriter::track_batch`] line up; returns the number of points.
+pub(crate) fn check_columns(points: &SeriesPoints) -> Result<usize> {
+    let n = points.steps.len();
+    if points.values.len() != n
+        || !(points.epochs.is_empty() || points.epochs.len() == n)
+        || !(points.timestamps.is_empty() || points.timestamps.len() == n)
+    {
+        return Err(Error::InvalidArgument(format!(
+            "series {:?}: steps, values, epochs and timestamps must have the same length \
+             (epochs and timestamps may be empty)",
+            points.name
+        )));
+    }
+    Ok(n)
+}
+
+/// The context of a [`RunWriter::track_batch`] series; `None` for the empty one.
+pub(crate) fn batch_context(points: &SeriesPoints) -> Option<Value> {
+    match &points.context {
+        Value::Null => None,
+        c => Some(c.clone()),
+    }
+}
+
 /// A run being written.
 #[async_trait]
 pub trait RunWriter: Send + Sync {
@@ -133,24 +157,11 @@ pub trait RunWriter: Send + Sync {
     /// Records the points of one series given in columns: `steps` and `values` of the same
     /// length, `epochs` and `timestamps` of that length or empty (no epochs; now). `key` and
     /// `run_id` are ignored: the points belong to this run. A point replaces the one at the same
-    /// step. The default calls [`RunWriter::track`] per point; a backend with a batch write
-    /// overrides it.
+    /// step. The default calls [`RunWriter::track`] per point; the kv0 store writes the batch at
+    /// once (`Run::track_many`).
     fn track_batch(&self, points: &SeriesPoints) -> Result<()> {
-        let n = points.steps.len();
-        if points.values.len() != n
-            || !(points.epochs.is_empty() || points.epochs.len() == n)
-            || !(points.timestamps.is_empty() || points.timestamps.len() == n)
-        {
-            return Err(Error::InvalidArgument(format!(
-                "series {:?}: steps, values, epochs and timestamps must have the same length \
-                 (epochs and timestamps may be empty)",
-                points.name
-            )));
-        }
-        let context = match &points.context {
-            Value::Null => None,
-            c => Some(c.clone()),
-        };
+        let n = check_columns(points)?;
+        let context = batch_context(points);
         for i in 0..n {
             self.track(
                 &points.name,

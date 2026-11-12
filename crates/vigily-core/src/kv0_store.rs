@@ -12,7 +12,7 @@ use crate::model::{
     normalize_kind, normalize_target, NewRun, Points, Run, RunPatch, RunStatus, Series, StepRange,
     Summary, TimeRange, TrackOpts,
 };
-use crate::store::{RunWriter, Store};
+use crate::store::{batch_context, check_columns, RunWriter, SeriesPoints, Store};
 
 /// Options for [`Kv0Store::open`].
 #[derive(Clone, Debug)]
@@ -331,6 +331,21 @@ impl RunWriter for Kv0Run {
         )?)
     }
 
+    fn track_batch(&self, points: &SeriesPoints) -> Result<()> {
+        let n = check_columns(points)?;
+        let batch: Vec<lw::TrackPoint> = (0..n)
+            .map(|i| lw::TrackPoint {
+                value: points.values[i],
+                step: Some(points.steps[i]),
+                epoch: points.epochs.get(i).copied().flatten(),
+                timestamp: points.timestamps.get(i).copied(),
+            })
+            .collect();
+        Ok(self
+            .run
+            .track_many(&points.name, batch_context(points), &batch)?)
+    }
+
     fn set_params(&self, params: &Value) -> Result<()> {
         Ok(self.run.set_params(params)?)
     }
@@ -441,6 +456,55 @@ mod tests {
         assert_eq!(runs[0].tags, vec!["best"]);
         assert_eq!(runs[0].status, RunStatus::Finished);
         assert_eq!(runs[0].created_at, 1_000_000);
+        store.close().await.unwrap();
+    }
+
+    /// A batch goes to kv0 in one `track_many` call: later points of a step win, non-finite values
+    /// and missing epochs and timestamps come through, and mismatched columns are refused whole.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn track_batch_writes_columns() {
+        let dir = tempfile::tempdir().unwrap();
+        let loc = dir.path().join("repo");
+        let store = Kv0Store::open(loc.to_str().unwrap(), Kv0Options::default())
+            .await
+            .unwrap();
+        let run = store.create_run(NewRun::default()).await.unwrap();
+        let batch = |steps: Vec<i64>, values: Vec<f64>| SeriesPoints {
+            run_id: String::new(),
+            name: "loss".into(),
+            context: json!({"subset": "val"}),
+            key: String::new(),
+            steps,
+            values,
+            epochs: Vec::new(),
+            timestamps: Vec::new(),
+        };
+        run.track_batch(&batch(vec![0, 1, 2], vec![1.0, f64::NAN, 3.0]))
+            .unwrap();
+        run.track_batch(&SeriesPoints {
+            epochs: vec![Some(1), None],
+            timestamps: vec![5, 6],
+            ..batch(vec![2, 3], vec![f64::INFINITY, 4.0])
+        })
+        .unwrap();
+        let err = run.track_batch(&batch(vec![4, 5], vec![5.0])).unwrap_err();
+        assert!(err.to_string().contains("same length"), "{err}");
+        run.flush().await.unwrap();
+
+        let id = run.info().id;
+        let series = store.series(&id).await.unwrap();
+        assert_eq!(series.len(), 1);
+        assert_eq!(series[0].key(), "loss[val]");
+        let p = &store
+            .points(&[series[0].id], StepRange::default())
+            .await
+            .unwrap()[&series[0].id];
+        assert_eq!(p.steps, vec![0, 1, 2, 3]);
+        assert_eq!(p.values[0], 1.0);
+        assert!(p.values[1].is_nan());
+        assert_eq!(p.values[2], f64::INFINITY);
+        assert_eq!(p.epochs, vec![None, None, Some(1), None]);
+        assert_eq!(p.timestamps[2..], [5, 6]);
         store.close().await.unwrap();
     }
 

@@ -205,7 +205,8 @@ pub(crate) async fn finish_run(
     }
     let w = writer(s, id).await?;
     s.records.flush().await?;
-    w.flush().await.map_err(|e| run_error(id, e))?;
+    // `finish` commits the run's buffered points together with its new status (one storage
+    // commit instead of two per run).
     w.finish(status, ended_at)
         .await
         .map_err(|e| run_error(id, e))?;

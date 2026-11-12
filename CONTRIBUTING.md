@@ -97,8 +97,13 @@ runs `npm run qa` and keeps the screens the README and the docs use
 ## Benchmarks
 
 `bench/scale.py` logs synthetic runs and `bench/scale.sh` times the server's API on them (see
-[architecture](docs/architecture.md)). The Benchmarks workflow runs both on demand, or on a pull
-request labelled `bench`, and writes the timings to the job summary; it never fails the build.
+[architecture](docs/architecture.md)). `bench/ingest.py` measures ingest through the SDK: N
+processes each log R runs of P points into an engine, and it reports `track()` latency, points per
+second per process and for the engine until `vigily.flush()` returns, the engine's CPU time and
+memory, and how long new points take to become readable. `bench/compare.sh [base]` runs it against
+the engine of another commit (default `origin/main`) and this checkout's. The Benchmarks workflow
+runs them on demand, or on a pull request labelled `bench`, and writes the numbers to the job
+summary; it never fails the build.
 
 ## Releasing
 
@@ -134,10 +139,10 @@ pre-release and pip installs only with `--pre` or an exact version):
   'vigily[local]'` installs it. There is no sdist: building the engine needs the web app and Rust.
 
 Both use trusted publishing, with no token. PyPI needs one trusted publisher per project, both with
-owner `sayef`, repository `vigily`, workflow `release.yml` and environment `pypi`: project `vigily`,
-and a second (pending) publisher for project `vigily-engine`, to add before the first release that
-publishes it. Renaming the workflow file or the environment breaks the uploads until the publishers
-are updated to match. A pull request that changes `release.yml`, `.github/scripts/install-protoc.sh`
+owner `sayef`, repository `vigily` and workflow `release.yml`: project `vigily` with environment
+`pypi`, and project `vigily-engine` with environment `pypi-engine` (PyPI refuses two pending
+publishers with the same repository, workflow and environment). Renaming the workflow file or an
+environment breaks the uploads until the publishers are updated to match. A pull request that changes `release.yml`, `.github/scripts/install-protoc.sh`
 or `crates/vigily-server/pyproject.toml` builds the engine wheels (and reports their sizes) without
 publishing anything.
 
