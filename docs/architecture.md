@@ -41,28 +41,38 @@ Column ids name what the runs table shows and sorts by: `run:name`, `param:hpara
 `router()` builds the axum app; `serve()` refreshes the catalog, starts the 2-second refresh loop
 and listens. Handlers are thin: parse, take a snapshot, call core, serialise.
 
+Every route lives under `/api/v1`. The routes of earlier releases (`/api/meta`, `/api/runs`, ...)
+answer as aliases of the same handlers, with `Deprecation: true`, a `Link` header naming the
+`/api/v1` successor, and the flat `{"error": "..."}` body they always had; they go away before
+0.1.0. On `/api/v1` every error is `{"error": {"code", "message", "position"?}}` with a code from
+`not_found`, `invalid_argument`, `conflict`, `run_deleted`, `unauthorized`, `forbidden`,
+`too_large`, `overloaded` or `internal`, including axum's own rejections (malformed JSON, a body
+over the limit).
+
 | Endpoint | Notes |
 |---|---|
-| `GET /api/meta` | counts, experiments, metric keys with run counts, parameter keys with kinds and distinct values |
-| `GET /api/runs?q=&sort=&desc=&archived=` | all matching rows; a query error is a 400 with `position` |
-| `GET /api/runs/{id}` | the row plus the parameter tree and series with summaries |
-| `PATCH /api/runs/{id}` | `name`, `experiment`, `description`, `tags`, `archived` |
-| `POST /api/chart` | `{runs, metric, x, range, points, group_by, aggregate}` → `{x, series[{run_id, name, group, y, last}], groups[{label, runs, mean, min, max, n}], domain, exact, missing}` |
+| `GET /api/v1/health` | `ok` |
+| `GET /api/v1/info` | `{version, api_version: "v1", mode: "local", capabilities}` |
+| `GET /api/v1/meta` | counts, experiments, metric keys with run counts, parameter keys with kinds and distinct values |
+| `GET /api/v1/runs?q=&sort=&desc=&archived=` | all matching rows; a query error is a 400 with `error.position` |
+| `GET /api/v1/runs/{id}` | the row plus the parameter tree and series with summaries |
+| `PATCH /api/v1/runs/{id}` | `name`, `experiment`, `description`, `tags`, `archived` |
+| `POST /api/v1/chart` | `{runs, metric, x, range, points, group_by, aggregate}` → `{x, series[{run_id, name, group, y, last}], groups[{label, runs, mean, min, max, n}], domain, exact, missing}` |
 
-Evaluation endpoints (`evals_api.rs`): `GET /api/datasets`, `GET /api/datasets/{name}`,
-`GET /api/runs/{id}/items`, `POST /api/runs/{id}/labels`, `GET /api/runs/{id}/audit`,
-`GET /api/compare?a=&b=`, `GET /api/schedules`, `GET /api/schedules/{name}/runs[/{id}]`,
-`GET /api/suites`, `GET /api/suites/{key}`, `PUT /api/suites/{key}/baseline`,
-`GET /api/suites/{key}/data-drift`, `GET /api/alerts`, `POST /api/alerts/{id}`. The scheduler
+Evaluation endpoints (`evals_api.rs`): `GET /api/v1/datasets`, `GET /api/v1/datasets/{name}`,
+`GET /api/v1/runs/{id}/items`, `POST /api/v1/runs/{id}/labels`, `GET /api/v1/runs/{id}/audit`,
+`GET /api/v1/compare?a=&b=`, `GET /api/v1/schedules`, `GET /api/v1/schedules/{name}/runs[/{id}]`,
+`GET /api/v1/suites`, `GET /api/v1/suites/{key}`, `PUT /api/v1/suites/{key}/baseline`,
+`GET /api/v1/suites/{key}/data-drift`, `GET /api/v1/alerts`, `POST /api/v1/alerts/{id}`. The scheduler
 (`scheduler.rs`), drift monitor and webhook (`monitor.rs`) and the configuration file (`config.rs`)
 start with `serve()`.
 
 Tracing endpoints (`traces_api.rs`, model and storage in `vigily-core/src/traces.rs`):
-`POST /api/traces/ingest`, `POST /v1/traces` (OTLP/HTTP JSON), `GET /api/traces?run=&model=&status=&since=&until=&q=`,
-`GET /api/traces/{id}`, `DELETE /api/traces/{id}`.
+`POST /api/v1/traces/ingest`, `POST /v1/traces` (OTLP/HTTP JSON), `GET /api/v1/traces?run=&model=&status=&since=&until=&q=`,
+`GET /api/v1/traces/{id}`, `DELETE /api/v1/traces/{id}`.
 
 Raw points of finished series are kept in a bounded cache (8 million points), so zooming re-samples
-without reading storage. Anything that is not `/api/...` is the embedded web app; client-side routes
+without reading storage. Anything that is not `/api/...` or `/v1/traces` is the embedded web app; client-side routes
 get `index.html`.
 
 ## vigily-ui

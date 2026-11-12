@@ -17,7 +17,7 @@
 
 Spans nest through :mod:`contextvars`, so nesting follows ``asyncio`` tasks and stays correct when
 coroutines interleave. A span ends when its block exits; it is then queued and a background thread
-sends queued spans to the server in batches (``POST /api/traces/ingest``), so tracing never blocks
+sends queued spans to the server in batches (``POST /api/v1/traces/ingest``), so tracing never blocks
 the traced code on the network. Queued spans are sent when the interpreter exits normally; call
 :func:`flush` to send them earlier (for example before ``os._exit``).
 
@@ -111,7 +111,7 @@ class _Exporter:
         timeout: float,
         max_queue: int,
     ) -> None:
-        self.url = url.rstrip("/") + "/api/traces/ingest"
+        self.url = url.rstrip("/") + "/api/v1/traces/ingest"
         self.batch_size = batch_size
         self.flush_interval = flush_interval
         self.timeout = timeout

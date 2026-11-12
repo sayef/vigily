@@ -67,3 +67,12 @@ fn traces_keep_their_wire_shape() {
     same::<traces::TracesResponse>("traces");
     same::<traces::TraceResponse>("trace");
 }
+
+#[test]
+fn errors_keep_their_wire_shape() {
+    same::<vigily_api::ErrorBody>("error_not_found");
+    same::<vigily_api::ErrorBody>("error_query");
+    same::<vigily_api::LegacyErrorBody>("legacy_error_not_found");
+    same::<vigily_api::LegacyErrorBody>("legacy_error_query");
+    same::<vigily_api::Info>("info");
+}

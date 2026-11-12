@@ -34,21 +34,21 @@ function chromiumPath() {
 }
 
 const api = async (path) => (await fetch(BASE + path)).json();
-const runs = (await api("/api/runs")).rows;
+const runs = (await api("/api/v1/runs")).rows;
 const longRun = runs.find((r) => r.name.endsWith("-long")) ?? runs[0];
 const failed = runs.find((r) => r.status === "failed") ?? runs[0];
 const cifar = runs.filter((r) => r.experiment === "cifar10-resnet18").map((r) => r.id);
 
-const suites = await api("/api/suites").catch(() => []);
+const suites = await api("/api/v1/suites").catch(() => []);
 const v2 = suites.find((x) => x.label === "intent-clf-v2") ?? suites.find((x) => x.scores.length) ?? suites[0];
-const suiteDetail = v2 ? await api(`/api/suites/${v2.key}`) : null;
+const suiteDetail = v2 ? await api(`/api/v1/suites/${v2.key}`) : null;
 const evalRun = suiteDetail?.selected;
 const evalRuns = suiteDetail?.runs ?? [];
 const before = evalRuns.length > 9 ? evalRuns[evalRuns.length - 9].run_id : null;
-const evalItems = evalRun ? ((await api(`/api/runs/${evalRun}/items`).catch(() => ({ items: [] }))).items ?? []).length : 0;
-const schedules = (await api("/api/schedules").catch(() => ({ schedules: [] }))).schedules;
-const datasets = await api("/api/datasets").catch(() => []);
-const traces = await api("/api/traces?limit=200").catch(() => ({ rows: [] }));
+const evalItems = evalRun ? ((await api(`/api/v1/runs/${evalRun}/items`).catch(() => ({ items: [] }))).items ?? []).length : 0;
+const schedules = (await api("/api/v1/schedules").catch(() => ({ schedules: [] }))).schedules;
+const datasets = await api("/api/v1/datasets").catch(() => []);
+const traces = await api("/api/v1/traces?limit=200").catch(() => ({ rows: [] }));
 const failedTrace = traces.rows.find((t) => t.status === "error") ?? traces.rows[0];
 const tracedRun = traces.rows.find((t) => t.run_id)?.run_id;
 
@@ -231,9 +231,9 @@ for (const theme of ["light", "dark"]) {
       { trace_id: id, span_id: "cy", parent_id: "cx", name: "qa_cycle_y", start_time: 500_500, end_time: 500_600 },
     ];
     for (let i = 0; i < 2500; i++) spans.push({ trace_id: id, span_id: `s${i}`, parent_id: "root", name: `qa_step_${i}`, start_time: 1_001_000 + i * 3000, end_time: 1_002_000 + i * 3000 });
-    const sent = await fetch(`${BASE}/api/traces/ingest`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ spans }) });
+    const sent = await fetch(`${BASE}/api/v1/traces/ingest`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ spans }) });
     await check("Ingest takes a synthetic trace", () => sent.ok);
-    const csrf = await fetch(`${BASE}/api/traces/ingest`, { method: "POST", headers: { "content-type": "text/plain" }, body: JSON.stringify({ spans }) });
+    const csrf = await fetch(`${BASE}/api/v1/traces/ingest`, { method: "POST", headers: { "content-type": "text/plain" }, body: JSON.stringify({ spans }) });
     await check("Ingest refuses text/plain", () => csrf.status === 415);
     await page.goto(`${BASE}/traces/${id}`, { waitUntil: "networkidle" });
     const names = await page.locator("[role=option]").allInnerTexts();

@@ -79,7 +79,7 @@ async fn call(
 #[tokio::test]
 async fn meta_lists_experiments_metrics_and_params() {
     let (app, _) = app().await;
-    let (st, v) = call(&app, "GET", "/api/meta", None).await;
+    let (st, v) = call(&app, "GET", "/api/v1/meta", None).await;
     assert_eq!(st, StatusCode::OK);
     assert_eq!(v["runs"], 4);
     assert_eq!(v["running"], 1);
@@ -105,7 +105,7 @@ async fn runs_filter_sort_and_report_query_errors() {
     let (st, v) = call(
         &app,
         "GET",
-        "/api/runs?q=lr%3C0.05&sort=param:hparams.lr",
+        "/api/v1/runs?q=lr%3C0.05&sort=param:hparams.lr",
         None,
     )
     .await;
@@ -125,7 +125,7 @@ async fn runs_filter_sort_and_report_query_errors() {
     let (_, v) = call(
         &app,
         "GET",
-        "/api/runs?q=kind:eval%20target.model=mlp-v2",
+        "/api/v1/runs?q=kind:eval%20target.model=mlp-v2",
         None,
     )
     .await;
@@ -133,17 +133,18 @@ async fn runs_filter_sort_and_report_query_errors() {
     assert_eq!(v["rows"][0]["kind"], "eval");
     assert_eq!(v["rows"][0]["target"]["git"], "4f2c1ab");
 
-    let (st, v) = call(&app, "GET", "/api/runs?q=lr%3C", None).await;
+    let (st, v) = call(&app, "GET", "/api/v1/runs?q=lr%3C", None).await;
     assert_eq!(st, StatusCode::BAD_REQUEST);
-    assert_eq!(v["position"], 2);
-    let (st, _) = call(&app, "GET", "/api/runs?sort=bogus", None).await;
+    assert_eq!(v["error"]["position"], 2);
+    assert_eq!(v["error"]["code"], "invalid_argument");
+    let (st, _) = call(&app, "GET", "/api/v1/runs?sort=bogus", None).await;
     assert_eq!(st, StatusCode::BAD_REQUEST);
 }
 
 #[tokio::test]
 async fn run_detail_and_patch() {
     let (app, ids) = app().await;
-    let (st, v) = call(&app, "GET", &format!("/api/runs/{}", ids[0]), None).await;
+    let (st, v) = call(&app, "GET", &format!("/api/v1/runs/{}", ids[0]), None).await;
     assert_eq!(st, StatusCode::OK);
     assert_eq!(v["params_tree"]["hparams"]["lr"], 0.1);
     assert_eq!(v["series"].as_array().unwrap().len(), 2);
@@ -152,7 +153,7 @@ async fn run_detail_and_patch() {
     let (st, v) = call(
         &app,
         "PATCH",
-        &format!("/api/runs/{}", ids[0]),
+        &format!("/api/v1/runs/{}", ids[0]),
         Some(json!({"description": "Diverged after warmup", "tags": ["keep", "keep", "lr"]})),
     )
     .await;
@@ -162,12 +163,12 @@ async fn run_detail_and_patch() {
     let (st, _) = call(
         &app,
         "PATCH",
-        &format!("/api/runs/{}", ids[0]),
+        &format!("/api/v1/runs/{}", ids[0]),
         Some(json!({"status": "failed"})),
     )
     .await;
     assert_eq!(st, StatusCode::BAD_REQUEST);
-    let (st, _) = call(&app, "GET", "/api/runs/nope", None).await;
+    let (st, _) = call(&app, "GET", "/api/v1/runs/nope", None).await;
     assert_eq!(st, StatusCode::NOT_FOUND);
 }
 
@@ -178,32 +179,35 @@ async fn delete_runs_refuses_running_runs_and_removes_the_rest() {
     let (st, v) = call(
         &app,
         "POST",
-        "/api/runs/delete",
+        "/api/v1/runs/delete",
         Some(json!({"ids": [ids[0], ids[3]]})),
     )
     .await;
     assert_eq!(st, StatusCode::CONFLICT, "{v}");
-    assert!(v["error"].as_str().unwrap().contains("running"), "{v}");
-    let (st, _) = call(&app, "GET", &format!("/api/runs/{}", ids[0]), None).await;
+    assert!(
+        v["error"]["message"].as_str().unwrap().contains("running"),
+        "{v}"
+    );
+    let (st, _) = call(&app, "GET", &format!("/api/v1/runs/{}", ids[0]), None).await;
     assert_eq!(st, StatusCode::OK, "a refused request deletes nothing");
 
     let (st, v) = call(
         &app,
         "POST",
-        "/api/runs/delete",
+        "/api/v1/runs/delete",
         Some(json!({"ids": [ids[0], ids[1]]})),
     )
     .await;
     assert_eq!(st, StatusCode::OK, "{v}");
     assert_eq!(v["deleted"], 2);
-    let (st, _) = call(&app, "GET", &format!("/api/runs/{}", ids[0]), None).await;
+    let (st, _) = call(&app, "GET", &format!("/api/v1/runs/{}", ids[0]), None).await;
     assert_eq!(st, StatusCode::NOT_FOUND);
-    let (_, v) = call(&app, "GET", "/api/runs", None).await;
+    let (_, v) = call(&app, "GET", "/api/v1/runs", None).await;
     assert_eq!(v["total"], 2, "{v}");
     let (st, _) = call(
         &app,
         "POST",
-        "/api/runs/delete",
+        "/api/v1/runs/delete",
         Some(json!({"ids": ["nope"]})),
     )
     .await;
@@ -225,12 +229,12 @@ async fn a_stale_running_run_can_be_marked_aborted_then_deleted() {
     let app = router(AppState::new(Arc::new(store.clone())));
 
     // Running and recently seen: not stale, cannot be aborted from the app.
-    let (_, v) = call(&app, "GET", &format!("/api/runs/{id}"), None).await;
+    let (_, v) = call(&app, "GET", &format!("/api/v1/runs/{id}"), None).await;
     assert_eq!(v["stale"], false);
     let (st, _) = call(
         &app,
         "PATCH",
-        &format!("/api/runs/{id}"),
+        &format!("/api/v1/runs/{id}"),
         Some(json!({"status": "aborted"})),
     )
     .await;
@@ -241,7 +245,7 @@ async fn a_stale_running_run_can_be_marked_aborted_then_deleted() {
     store.set_updated_at(&id, quiet);
     // The catalog serves a snapshot up to a second old.
     tokio::time::sleep(std::time::Duration::from_millis(1100)).await;
-    let (_, v) = call(&app, "GET", &format!("/api/runs/{id}"), None).await;
+    let (_, v) = call(&app, "GET", &format!("/api/v1/runs/{id}"), None).await;
     assert_eq!(
         (v["stale"].clone(), v["last_seen"].clone()),
         (json!(true), json!(quiet))
@@ -249,7 +253,7 @@ async fn a_stale_running_run_can_be_marked_aborted_then_deleted() {
     let (st, v) = call(
         &app,
         "PATCH",
-        &format!("/api/runs/{id}"),
+        &format!("/api/v1/runs/{id}"),
         Some(json!({"status": "aborted"})),
     )
     .await;
@@ -261,12 +265,18 @@ async fn a_stale_running_run_can_be_marked_aborted_then_deleted() {
     let (st, _) = call(
         &app,
         "PATCH",
-        &format!("/api/runs/{live}"),
+        &format!("/api/v1/runs/{live}"),
         Some(json!({"status": "finished"})),
     )
     .await;
     assert_eq!(st, StatusCode::BAD_REQUEST);
-    let (st, v) = call(&app, "POST", "/api/runs/delete", Some(json!({"ids": [id]}))).await;
+    let (st, v) = call(
+        &app,
+        "POST",
+        "/api/v1/runs/delete",
+        Some(json!({"ids": [id]})),
+    )
+    .await;
     assert_eq!(st, StatusCode::OK, "{v}");
 }
 
@@ -274,7 +284,7 @@ async fn a_stale_running_run_can_be_marked_aborted_then_deleted() {
 async fn chart_aligns_downsamples_and_aggregates() {
     let (app, ids) = app().await;
     let req = json!({"runs": ids, "metric": "loss[val]", "points": 200});
-    let (st, v) = call(&app, "POST", "/api/chart", Some(req)).await;
+    let (st, v) = call(&app, "POST", "/api/v1/chart", Some(req)).await;
     assert_eq!(st, StatusCode::OK, "{v}");
     assert_eq!(v["x"].as_array().unwrap().len(), 400);
     assert_eq!(v["exact"], false);
@@ -283,12 +293,12 @@ async fn chart_aligns_downsamples_and_aggregates() {
     assert_eq!(v["series"][0]["last"][0], json!(4999.0));
 
     let zoom = json!({"runs": [ids[0]], "metric": "loss[val]", "range": [100, 199], "points": 400});
-    let (_, v) = call(&app, "POST", "/api/chart", Some(zoom)).await;
+    let (_, v) = call(&app, "POST", "/api/v1/chart", Some(zoom)).await;
     assert_eq!(v["exact"], true);
     assert_eq!(v["x"].as_array().unwrap().len(), 102);
 
     let agg = json!({"runs": ids, "metric": "loss[val]", "points": 100, "group_by": "param:hparams.batch_size", "aggregate": true});
-    let (st, v) = call(&app, "POST", "/api/chart", Some(agg)).await;
+    let (st, v) = call(&app, "POST", "/api/v1/chart", Some(agg)).await;
     assert_eq!(st, StatusCode::OK, "{v}");
     let groups = v["groups"].as_array().unwrap();
     assert_eq!(groups.len(), 2);
@@ -296,7 +306,7 @@ async fn chart_aligns_downsamples_and_aggregates() {
     assert_eq!(groups[0]["runs"], 2);
 
     let rel = json!({"runs": [ids[1], "nope"], "metric": "loss[val]", "x": "relative"});
-    let (_, v) = call(&app, "POST", "/api/chart", Some(rel)).await;
+    let (_, v) = call(&app, "POST", "/api/v1/chart", Some(rel)).await;
     assert_eq!(v["missing"], json!(["nope"]));
     assert_eq!(v["domain"], json!([0.0, 4.999]));
 }
@@ -307,6 +317,6 @@ async fn serves_the_app_for_client_routes() {
     let (st, v) = call(&app, "GET", "/runs/abc", None).await;
     assert_eq!(st, StatusCode::OK);
     assert!(v.as_str().unwrap().contains("vigily"));
-    let (st, _) = call(&app, "GET", "/api/nope", None).await;
+    let (st, _) = call(&app, "GET", "/api/v1/nope", None).await;
     assert_eq!(st, StatusCode::NOT_FOUND);
 }

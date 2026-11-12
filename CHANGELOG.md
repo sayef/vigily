@@ -66,6 +66,12 @@ The first release, published as betas (0.1.0-beta.N) before 0.1.0.
 
 ### Changed
 
+- The HTTP API moves to `/api/v1`, with `GET /api/v1/info` (version, API version, mode and
+  capabilities). Errors there are `{"error": {"code", "message", "position"?}}` with a stable code
+  (`not_found`, `invalid_argument`, `conflict`, ...). The old `/api/*` paths keep working as
+  deprecated aliases with a `Deprecation` header, a `Link` to the successor and the old flat error
+  body; they are removed before 0.1.0. OpenTelemetry's `POST /v1/traces` is unchanged. The web app
+  and the Python SDK's span exporter use `/api/v1`.
 - The JSON types of the HTTP API (the run model, every route's answer, evaluation, drift and trace
   types) move to a new crate, `vigily-api`, which depends on serde alone; `vigily-core` re-exports
   them. Schedules and suites answer with typed structures instead of ad-hoc JSON. Golden JSON

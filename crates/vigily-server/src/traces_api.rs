@@ -2,11 +2,11 @@
 //!
 //! | Method and path              | What it does |
 //! |------------------------------|--------------|
-//! | `POST /api/traces/ingest`    | Stores a batch of spans (`{"spans": [...]}`), see [`vigily_core::traces::SpanIn`] |
+//! | `POST /api/v1/traces/ingest` | Stores a batch of spans (`{"spans": [...]}`), see [`vigily_core::traces::SpanIn`] |
 //! | `POST /v1/traces`            | The same for an OpenTelemetry OTLP/HTTP JSON export |
-//! | `GET /api/traces`            | Trace summaries, newest first, filtered by run, model, status, time and name |
-//! | `GET /api/traces/{id}`       | One trace with its spans |
-//! | `DELETE /api/traces/{id}`    | Deletes one trace |
+//! | `GET /api/v1/traces`         | Trace summaries, newest first, filtered by run, model, status, time and name |
+//! | `GET /api/v1/traces/{id}`    | One trace with its spans |
+//! | `DELETE /api/v1/traces/{id}` | Deletes one trace |
 
 use std::collections::BTreeSet;
 use std::sync::Arc;
@@ -30,18 +30,23 @@ type ApiResult<T> = Result<Json<T>, ApiError>;
 /// The largest ingest request body.
 pub const MAX_INGEST_BYTES: usize = 32 * 1024 * 1024;
 
+/// The tracing routes, relative to the API root.
 pub fn routes() -> Router<Arc<AppState>> {
     Router::new()
         .route(
-            "/api/traces/ingest",
+            "/traces/ingest",
             post(ingest).layer(DefaultBodyLimit::max(MAX_INGEST_BYTES)),
         )
-        .route(
-            "/v1/traces",
-            post(ingest_otlp).layer(DefaultBodyLimit::max(MAX_INGEST_BYTES)),
-        )
-        .route("/api/traces", get(list))
-        .route("/api/traces/{id}", get(one).delete(delete))
+        .route("/traces", get(list))
+        .route("/traces/{id}", get(one).delete(delete))
+}
+
+/// OpenTelemetry's OTLP/HTTP endpoint, at the root where exporters expect it.
+pub fn otlp_routes() -> Router<Arc<AppState>> {
+    Router::new().route(
+        "/v1/traces",
+        post(ingest_otlp).layer(DefaultBodyLimit::max(MAX_INGEST_BYTES)),
+    )
 }
 
 fn bad(m: impl Into<String>) -> ApiError {

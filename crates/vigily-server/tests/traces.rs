@@ -71,7 +71,7 @@ async fn ingest(app: &axum::Router, spans: Value) -> (StatusCode, Value) {
     call(
         app,
         "POST",
-        "/api/traces/ingest",
+        "/api/v1/traces/ingest",
         Some(("application/json", json!({ "spans": spans }).to_string())),
     )
     .await
@@ -101,10 +101,10 @@ async fn ingest_list_and_detail() {
     assert_eq!(v["accepted"], 3);
     ingest(&app, spans("aa02", None, 5_000_000)).await;
 
-    let (_, meta) = call(&app, "GET", "/api/meta", None).await;
+    let (_, meta) = call(&app, "GET", "/api/v1/meta", None).await;
     assert_eq!(meta["traces"], 2);
 
-    let (st, v) = call(&app, "GET", "/api/traces", None).await;
+    let (st, v) = call(&app, "GET", "/api/v1/traces", None).await;
     assert_eq!(st, StatusCode::OK);
     assert_eq!(v["total"], 2);
     assert_eq!(v["rows"][0]["id"], "aa02", "newest first");
@@ -121,16 +121,16 @@ async fn ingest_list_and_detail() {
     assert!(row.get("span_ids").is_none());
     assert!((v["totals"]["cost"]["EUR"].as_f64().unwrap() - 2.0 * want).abs() < 1e-12);
 
-    let (_, v) = call(&app, "GET", &format!("/api/traces?run={run}"), None).await;
+    let (_, v) = call(&app, "GET", &format!("/api/v1/traces?run={run}"), None).await;
     assert_eq!(v["total"], 1);
-    let (_, v) = call(&app, "GET", "/api/traces?status=ok", None).await;
+    let (_, v) = call(&app, "GET", "/api/v1/traces?status=ok", None).await;
     assert_eq!(v["total"], 0);
-    let (_, v) = call(&app, "GET", "/api/traces?since=4000000", None).await;
+    let (_, v) = call(&app, "GET", "/api/v1/traces?since=4000000", None).await;
     assert_eq!(v["total"], 1);
-    let (_, v) = call(&app, "GET", "/api/traces?model=model-z", None).await;
+    let (_, v) = call(&app, "GET", "/api/v1/traces?model=model-z", None).await;
     assert_eq!(v["total"], 0);
 
-    let (st, v) = call(&app, "GET", "/api/traces/aa01", None).await;
+    let (st, v) = call(&app, "GET", "/api/v1/traces/aa01", None).await;
     assert_eq!(st, StatusCode::OK);
     assert_eq!(v["trace"]["name"], "answer question");
     assert_eq!(v["trace"]["eval_item"], "item-1");
@@ -141,11 +141,11 @@ async fn ingest_list_and_detail() {
     assert_eq!(llm["input"].as_str().unwrap().len(), 4096);
     assert!(llm["truncated"]["input"].as_u64().unwrap() > 6000);
 
-    let (st, _) = call(&app, "DELETE", "/api/traces/aa02", None).await;
+    let (st, _) = call(&app, "DELETE", "/api/v1/traces/aa02", None).await;
     assert_eq!(st, StatusCode::OK);
-    let (st, _) = call(&app, "GET", "/api/traces/aa02", None).await;
+    let (st, _) = call(&app, "GET", "/api/v1/traces/aa02", None).await;
     assert_eq!(st, StatusCode::NOT_FOUND);
-    let (_, v) = call(&app, "GET", "/api/traces", None).await;
+    let (_, v) = call(&app, "GET", "/api/v1/traces", None).await;
     assert_eq!(v["total"], 1);
 }
 
@@ -168,16 +168,16 @@ async fn project_policy_follows_the_run_experiment() {
         s["project"] = json!("elsewhere");
     }
     ingest(&app, other).await;
-    let (_, v) = call(&app, "GET", "/api/traces/bb01", None).await;
+    let (_, v) = call(&app, "GET", "/api/v1/traces/bb01", None).await;
     assert_eq!(v["trace"]["payloads"], "metadata");
     assert!(v["spans"][0].get("input").is_none_or(Value::is_null));
     assert_eq!(v["spans"][2]["error"], "TimeoutError");
     // No project known: the strictest configured policy applies.
-    let (_, v) = call(&app, "GET", "/api/traces/bb02", None).await;
+    let (_, v) = call(&app, "GET", "/api/v1/traces/bb02", None).await;
     assert_eq!(v["trace"]["payloads"], "metadata");
     assert!(v["spans"][1].get("input").is_none_or(Value::is_null));
     // A project without its own policy gets the global one.
-    let (_, v) = call(&app, "GET", "/api/traces/bb03", None).await;
+    let (_, v) = call(&app, "GET", "/api/v1/traces/bb03", None).await;
     assert_eq!(v["trace"]["payloads"], "full");
     assert_eq!(
         v["spans"][1]["input"][0]["content"].as_str().unwrap().len(),
@@ -197,7 +197,7 @@ async fn rejects_bad_input() {
     let (st, _) = call(
         &app,
         "POST",
-        "/api/traces/ingest",
+        "/api/v1/traces/ingest",
         Some(("application/json", "{}".into())),
     )
     .await;
@@ -242,7 +242,7 @@ async fn otlp_json_export() {
     )
     .await;
     assert_eq!(st, StatusCode::OK, "{v}");
-    let (_, v) = call(&app, "GET", &format!("/api/traces?run={run}"), None).await;
+    let (_, v) = call(&app, "GET", &format!("/api/v1/traces?run={run}"), None).await;
     assert_eq!(v["total"], 1);
     let row = &v["rows"][0];
     assert_eq!(row["name"], "agent");
@@ -279,7 +279,7 @@ async fn post_with(app: &axum::Router, uri: &str, ct: &str, origin: Option<&str>
 #[tokio::test]
 async fn ingest_refuses_requests_a_web_page_can_send() {
     let (app, _) = app(Config::default()).await;
-    for uri in ["/api/traces/ingest", "/v1/traces"] {
+    for uri in ["/api/v1/traces/ingest", "/v1/traces"] {
         for ct in [
             "text/plain",
             "application/x-www-form-urlencoded",
@@ -329,16 +329,16 @@ async fn ingest_refuses_requests_a_web_page_can_send() {
 #[tokio::test]
 async fn meta_counts_new_traces_without_rescanning_and_detail_has_the_field_limit() {
     let (app, run) = app(Config::default()).await;
-    let (_, meta) = call(&app, "GET", "/api/meta", None).await;
+    let (_, meta) = call(&app, "GET", "/api/v1/meta", None).await;
     assert_eq!(meta["traces"], 0);
     ingest(&app, spans("cc01", Some(&run), 0)).await;
     ingest(&app, spans("cc01", Some(&run), 0)).await; // resent: no new trace
     ingest(&app, spans("cc02", None, 0)).await;
-    let (_, meta) = call(&app, "GET", "/api/meta", None).await;
+    let (_, meta) = call(&app, "GET", "/api/v1/meta", None).await;
     assert_eq!(meta["traces"], 2);
-    call(&app, "DELETE", "/api/traces/cc02", None).await;
-    let (_, meta) = call(&app, "GET", "/api/meta", None).await;
+    call(&app, "DELETE", "/api/v1/traces/cc02", None).await;
+    let (_, meta) = call(&app, "GET", "/api/v1/meta", None).await;
     assert_eq!(meta["traces"], 1);
-    let (_, v) = call(&app, "GET", "/api/traces/cc01", None).await;
+    let (_, v) = call(&app, "GET", "/api/v1/traces/cc01", None).await;
     assert_eq!(v["max_field_bytes"], 4096);
 }

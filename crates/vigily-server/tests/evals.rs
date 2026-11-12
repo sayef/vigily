@@ -148,13 +148,13 @@ async fn setup() -> (Arc<AppState>, axum::Router, Vec<String>) {
 #[tokio::test]
 async fn datasets_items_labels_compare_and_audit() {
     let (_, app, ids) = setup().await;
-    let (st, v, _) = call(&app, "GET", "/api/datasets", None).await;
+    let (st, v, _) = call(&app, "GET", "/api/v1/datasets", None).await;
     assert_eq!(st, StatusCode::OK);
     assert_eq!(v[0]["name"], "support");
     let (_, v, _) = call(
         &app,
         "GET",
-        "/api/datasets/support?q=question%2019&limit=5",
+        "/api/v1/datasets/support?q=question%2019&limit=5",
         None,
     )
     .await;
@@ -166,7 +166,7 @@ async fn datasets_items_labels_compare_and_audit() {
     let (_, v, _) = call(
         &app,
         "GET",
-        &format!("/api/runs/{last}/items?failures=true"),
+        &format!("/api/v1/runs/{last}/items?failures=true"),
         None,
     )
     .await;
@@ -178,12 +178,12 @@ async fn datasets_items_labels_compare_and_audit() {
     assert_eq!(v["items"][0]["input"], "question 120");
     assert_eq!(v["scores"]["exact_match"]["pass_rate"], 0.6);
 
-    let (st, l, _) = call(&app, "POST", &format!("/api/runs/{last}/labels"), Some(json!({"item_id": "q150", "name": "human", "passed": true, "comment": "b is acceptable"}))).await;
+    let (st, l, _) = call(&app, "POST", &format!("/api/v1/runs/{last}/labels"), Some(json!({"item_id": "q150", "name": "human", "passed": true, "comment": "b is acceptable"}))).await;
     assert_eq!(st, StatusCode::OK, "{l}");
     let (st, _, _) = call(
         &app,
         "POST",
-        &format!("/api/runs/{last}/labels"),
+        &format!("/api/v1/runs/{last}/labels"),
         Some(json!({"item_id": "q150", "name": " "})),
     )
     .await;
@@ -191,7 +191,7 @@ async fn datasets_items_labels_compare_and_audit() {
     let (st, _, _) = call(
         &app,
         "POST",
-        &format!("/api/runs/{last}/labels"),
+        &format!("/api/v1/runs/{last}/labels"),
         Some(json!({"item_id": "nope", "name": "human", "passed": true})),
     )
     .await;
@@ -200,7 +200,7 @@ async fn datasets_items_labels_compare_and_audit() {
     let (_, c, _) = call(
         &app,
         "GET",
-        &format!("/api/compare?a={}&b={last}", ids[8]),
+        &format!("/api/v1/compare?a={}&b={last}", ids[8]),
         None,
     )
     .await;
@@ -210,7 +210,7 @@ async fn datasets_items_labels_compare_and_audit() {
     let (st, a, disp) = call(
         &app,
         "GET",
-        &format!("/api/runs/{last}/audit?download=true"),
+        &format!("/api/v1/runs/{last}/audit?download=true"),
         None,
     )
     .await;
@@ -231,7 +231,7 @@ async fn datasets_items_labels_compare_and_audit() {
 #[tokio::test]
 async fn suites_drift_baselines_and_alerts() {
     let (state, app, ids) = setup().await;
-    let (_, v, _) = call(&app, "GET", "/api/suites", None).await;
+    let (_, v, _) = call(&app, "GET", "/api/v1/suites", None).await;
     assert_eq!(v.as_array().unwrap().len(), 1);
     let s = &v[0];
     assert_eq!(s["label"], "clf-v2");
@@ -239,7 +239,7 @@ async fn suites_drift_baselines_and_alerts() {
     assert_eq!(s["data"], "drift");
     let key = s["key"].as_str().unwrap().to_string();
 
-    let (_, d, _) = call(&app, "GET", &format!("/api/suites/{key}"), None).await;
+    let (_, d, _) = call(&app, "GET", &format!("/api/v1/suites/{key}"), None).await;
     let hist = d["history"]["exact_match"].as_array().unwrap();
     assert_eq!(hist.len(), 10);
     assert_eq!(hist[9]["drifted"], true);
@@ -247,14 +247,20 @@ async fn suites_drift_baselines_and_alerts() {
     assert_eq!(d["drift"][0]["regressions"].as_array().unwrap().len(), 60);
     assert_eq!(d["drift"][0]["regression_inputs"][0], "question 120");
 
-    let (_, dd, _) = call(&app, "GET", &format!("/api/suites/{key}/data-drift"), None).await;
+    let (_, dd, _) = call(
+        &app,
+        "GET",
+        &format!("/api/v1/suites/{key}/data-drift"),
+        None,
+    )
+    .await;
     assert_eq!(dd["features"][0]["level"], "drift");
     assert_eq!(dd["baseline_runs"].as_array().unwrap().len(), 7);
 
     let (st, _, _) = call(
         &app,
         "PUT",
-        &format!("/api/suites/{key}/baseline"),
+        &format!("/api/v1/suites/{key}/baseline"),
         Some(json!({"mode": "pinned", "window": 7, "runs": ["nope"], "updated_at": 0})),
     )
     .await;
@@ -262,12 +268,18 @@ async fn suites_drift_baselines_and_alerts() {
     let (st, b, _) = call(
         &app,
         "PUT",
-        &format!("/api/suites/{key}/baseline"),
+        &format!("/api/v1/suites/{key}/baseline"),
         Some(json!({"mode": "pinned", "window": 7, "runs": [ids[0], ids[1]], "updated_at": 0})),
     )
     .await;
     assert_eq!(st, StatusCode::OK, "{b}");
-    let (_, dd, _) = call(&app, "GET", &format!("/api/suites/{key}/data-drift"), None).await;
+    let (_, dd, _) = call(
+        &app,
+        "GET",
+        &format!("/api/v1/suites/{key}/data-drift"),
+        None,
+    )
+    .await;
     assert_eq!(dd["baseline_runs"].as_array().unwrap().len(), 2);
 
     let checked = monitor::Checked::default();
@@ -281,18 +293,18 @@ async fn suites_drift_baselines_and_alerts() {
         0,
         "checked once"
     );
-    let (_, al, _) = call(&app, "GET", "/api/alerts", None).await;
+    let (_, al, _) = call(&app, "GET", "/api/v1/alerts", None).await;
     assert_eq!(al.as_array().unwrap().len(), 2);
     let id = al[0]["id"].as_str().unwrap();
     let (_, a, _) = call(
         &app,
         "POST",
-        &format!("/api/alerts/{id}"),
+        &format!("/api/v1/alerts/{id}"),
         Some(json!({"acknowledged": true})),
     )
     .await;
     assert!(a["acknowledged_at"].is_number());
-    let (_, m, _) = call(&app, "GET", "/api/meta", None).await;
+    let (_, m, _) = call(&app, "GET", "/api/v1/meta", None).await;
     assert_eq!(m["open_alerts"], 1);
     assert_eq!(m["datasets"], 1);
 }
@@ -356,22 +368,22 @@ async fn schedules_run_retry_capture_output_and_time_out() {
     assert_eq!(ok[0].status, ScheduleRunStatus::Succeeded);
 
     let app = router(state.clone());
-    let (_, v, _) = call(&app, "GET", "/api/schedules", None).await;
+    let (_, v, _) = call(&app, "GET", "/api/v1/schedules", None).await;
     let list = v["schedules"].as_array().unwrap();
     assert_eq!(list.len(), 3);
     assert_eq!(list[0]["last_run"]["status"], "failed");
     assert_eq!(list[0]["runs"], 2);
-    let (_, r, _) = call(&app, "GET", "/api/schedules/flaky/runs", None).await;
+    let (_, r, _) = call(&app, "GET", "/api/v1/schedules/flaky/runs", None).await;
     let id = r["runs"][0]["id"].as_str().unwrap();
     let (_, full, _) = call(
         &app,
         "GET",
-        &format!("/api/schedules/flaky/runs/{id}"),
+        &format!("/api/v1/schedules/flaky/runs/{id}"),
         None,
     )
     .await;
     assert_eq!(full["stderr"].as_str().unwrap().trim(), "oops");
-    let (_, al, _) = call(&app, "GET", "/api/alerts", None).await;
+    let (_, al, _) = call(&app, "GET", "/api/v1/alerts", None).await;
     let kinds: Vec<&str> = al
         .as_array()
         .unwrap()
@@ -383,7 +395,7 @@ async fn schedules_run_retry_capture_output_and_time_out() {
         vec!["schedule_failed", "schedule_failed"],
         "flaky and slow"
     );
-    let (st, _, _) = call(&app, "GET", "/api/schedules/nope/runs", None).await;
+    let (st, _, _) = call(&app, "GET", "/api/v1/schedules/nope/runs", None).await;
     assert_eq!(st, StatusCode::NOT_FOUND);
 }
 
