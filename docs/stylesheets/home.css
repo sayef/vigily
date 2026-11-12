@@ -66,6 +66,10 @@
 .vg-side p {
   margin: 0;
 }
+.vg-side .vg-note {
+  margin-top: 0.9rem;
+  color: var(--vg-faint);
+}
 .vg-actions {
   display: flex;
   flex-wrap: wrap;

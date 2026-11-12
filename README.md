@@ -27,6 +27,8 @@
   </picture>
 </p>
 
+> vigily is in beta: the API may still change before 0.1.0.
+
 ## Why vigily
 
 Most teams stitch together a tracker for training runs (MLflow, W&B), a tool for LLM and model
@@ -67,7 +69,9 @@ curl -LsSfO https://raw.githubusercontent.com/sayef/vigily/main/scripts/install.
 sh install.sh
 ```
 
-`VIGILY_VERSION=v0.1.0` installs a given release and `VIGILY_INSTALL_DIR` changes the directory.
+`VIGILY_VERSION=v0.1.0-beta.1` installs a given release and `VIGILY_INSTALL_DIR` changes the directory.
+Until 0.1.0 every release is a beta, published as a pre-release, and `latest` serves none of
+them: set `VIGILY_VERSION` (or `VIGILY_IMAGE` for Docker) to a beta tag such as `v0.1.0-beta.1`.
 The binary serves the web app and API (`vigily up`); the Python SDK is built from the repository
 until it is on PyPI.
 
