@@ -6,6 +6,8 @@ All notable changes to vigily are documented here. The format follows
 
 ## [Unreleased]
 
+The first release, published as betas (0.1.0-beta.N) before 0.1.0.
+
 ### Added
 
 - LLM tracing. `vigily.trace(...)` (a context manager, `async with`, and a decorator) records nested

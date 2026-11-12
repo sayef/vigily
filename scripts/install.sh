@@ -4,7 +4,7 @@
 #   curl -LsSf https://raw.githubusercontent.com/sayef/vigily/main/scripts/install.sh | sh
 #
 # Environment:
-#   VIGILY_VERSION       release tag to install, such as v0.1.0 (default: the latest release)
+#   VIGILY_VERSION       release tag to install, such as v0.1.0-beta.1 (default: the latest release)
 #   VIGILY_INSTALL_DIR   where to put the binary (default: $HOME/.local/bin)
 #   VIGILY_DOWNLOAD_BASE where the release files are (default: the GitHub release); for testing
 #
