@@ -19,6 +19,11 @@ use vigily_core::{
 use vigily_server::config::{Config, ScheduleConfig};
 use vigily_server::{serve, AppState, AuthSetup, ServeOptions};
 
+/// A command that must succeed.
+fn ok(code: ExitCode) {
+    assert_eq!(code, ExitCode::SUCCESS);
+}
+
 const VIGILY: &str = env!("CARGO_BIN_EXE_vigily");
 
 /// An engine over `store` in local mode on a free port; its URL and token.
@@ -114,7 +119,7 @@ async fn runs_prints_a_table_and_how_many_more_match() {
     assert_eq!(text(&err), "1 more; raise --limit to see them\n");
 
     let (mut out, mut err) = (Vec::new(), Vec::new());
-    vigily_cli::runs(
+    ok(vigily_cli::runs(
         &c,
         &mut out,
         &mut err,
@@ -124,7 +129,7 @@ async fn runs_prints_a_table_and_how_many_more_match() {
         50,
     )
     .await
-    .unwrap();
+    .unwrap());
     let out = text(&out);
     let names: Vec<&str> = out
         .lines()
@@ -217,7 +222,7 @@ async fn purge_names_a_blocking_tag_and_force_deletes_it() {
     assert!(e.contains("Run `vigily runs purge --force`"), "{e}");
 
     let mut out = Vec::new();
-    vigily_cli::purge(&c, &mut out, true).await.unwrap();
+    ok(vigily_cli::purge(&c, &mut out, true).await.unwrap());
     let out = text(&out);
     assert!(
         out.starts_with(
@@ -275,7 +280,7 @@ async fn schedules_list_and_a_failing_run_exits_1() {
     let c = engine(dir.path(), config).await;
 
     let mut out = Vec::new();
-    vigily_cli::schedules(&c, &mut out).await.unwrap();
+    ok(vigily_cli::schedules(&c, &mut out).await.unwrap());
     let out = text(&out);
     let lines: Vec<&str> = out.lines().collect();
     assert!(
@@ -318,18 +323,20 @@ async fn tokens_traces_optimize_env_and_rotation() {
     let c = engine(dir.path(), Config::default()).await;
 
     let mut out = Vec::new();
-    vigily_cli::tokens(&c, &mut out).await.unwrap();
+    ok(vigily_cli::tokens(&c, &mut out).await.unwrap());
     assert_eq!(text(&out), "No tokens.\n");
     let mut out = Vec::new();
-    vigily_cli::create_token(&c, &mut out, "ci", &["read,ingest".into()], Some("30d"))
-        .await
-        .unwrap();
+    ok(
+        vigily_cli::create_token(&c, &mut out, "ci", &["read,ingest".into()], Some("30d"))
+            .await
+            .unwrap(),
+    );
     let out = text(&out);
     let token = out.lines().next().unwrap().to_string();
     assert!(token.starts_with("vgy_"), "{out}");
     let id = token.split('_').nth(1).unwrap().to_string();
     let mut out = Vec::new();
-    vigily_cli::tokens(&c, &mut out).await.unwrap();
+    ok(vigily_cli::tokens(&c, &mut out).await.unwrap());
     let out = text(&out);
     assert!(out.starts_with("ID  "), "{out}");
     assert!(out.contains(&format!("{id}  ci    read,ingest  ")), "{out}");
@@ -341,22 +348,24 @@ async fn tokens_traces_optimize_env_and_rotation() {
             .contains("unknown scope")
     );
     let mut out = Vec::new();
-    vigily_cli::revoke_token(&c, &mut out, &id).await.unwrap();
+    ok(vigily_cli::revoke_token(&c, &mut out, &id).await.unwrap());
     assert_eq!(text(&out), format!("Revoked token {id}.\n"));
 
     let (mut out, mut err) = (Vec::new(), Vec::new());
-    vigily_cli::delete_traces(&c, &mut out, &mut err, &["missing".into()], false, false)
-        .await
-        .unwrap();
+    ok(
+        vigily_cli::delete_traces(&c, &mut out, &mut err, &["missing".into()], false, false)
+            .await
+            .unwrap(),
+    );
     assert_eq!(text(&err), "No trace with id missing.\n");
     assert!(text(&out).starts_with("Deleted 0 traces.\nDeleting hides them"));
 
     let mut out = Vec::new();
-    vigily_cli::optimize(&c, &mut out, "repo").await.unwrap();
+    ok(vigily_cli::optimize(&c, &mut out, "repo").await.unwrap());
     assert!(text(&out).starts_with("Optimized repo in "));
 
     let mut out = Vec::new();
-    vigily_cli::env(&c, &mut out).unwrap();
+    ok(vigily_cli::env(&c, &mut out).unwrap());
     assert_eq!(
         text(&out),
         format!(
@@ -366,14 +375,14 @@ async fn tokens_traces_optimize_env_and_rotation() {
         )
     );
     let mut out = Vec::new();
-    vigily_cli::open(&c, &mut out, false).await.unwrap();
+    ok(vigily_cli::open(&c, &mut out, false).await.unwrap());
     assert_eq!(
         text(&out),
         format!("{}/?token={}\n", c.base(), c.token().unwrap())
     );
 
     let mut out = Vec::new();
-    vigily_cli::rotate_token(&c, &mut out).await.unwrap();
+    ok(vigily_cli::rotate_token(&c, &mut out).await.unwrap());
     let out = text(&out);
     let link = out.lines().last().unwrap();
     let fresh = link.split("token=").nth(1).unwrap();
