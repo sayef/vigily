@@ -1,0 +1,15 @@
+{
+  "items": [
+    {
+      "id": "q1",
+      "input": "2+2",
+      "expected": "4",
+      "metadata": {
+        "topic": "arithmetic"
+      }
+    }
+  ],
+  "mode": "upsert",
+  "note": "one more item",
+  "source": "sdk"
+}

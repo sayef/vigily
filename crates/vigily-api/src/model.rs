@@ -139,16 +139,24 @@ pub fn normalize_target(target: Option<&Value>) -> Option<Value> {
 }
 
 /// A change to a run's metadata. `None` leaves a field as it is.
-#[derive(Clone, Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RunPatch {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub experiment: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tags: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub archived: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub status: Option<RunStatus>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub created_at: Option<Micros>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ended_at: Option<Micros>,
 }
 

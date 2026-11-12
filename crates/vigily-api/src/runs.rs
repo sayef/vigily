@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::catalog::{ExperimentInfo, MetricInfo, ParamInfo, SeriesEntry};
-use crate::model::{RunStatus, Summary};
+use crate::model::{Micros, Run, RunStatus, Summary};
 
 /// What a purge removed (`vigily runs purge`).
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -150,18 +150,26 @@ pub struct RunSeries {
 
 /// `GET runs/{id}/points?name=&context=&start_time=&stop_time=`: the points of one series, in
 /// step order. A value that is not finite is the string `NaN`, `Infinity` or `-Infinity`.
+///
+/// The same columns are the `points` operation of an ingest batch ([`crate::ingest::Op`]). There
+/// `context` may be left out (no context), `key` is ignored, and `epochs` and `timestamps` may be
+/// empty (no epochs; the time the engine applies the batch).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SeriesPoints {
     pub run_id: String,
     pub name: String,
+    #[serde(default)]
     pub context: Value,
     /// The metric key: `loss` or `loss[val]`.
+    #[serde(default)]
     pub key: String,
     pub steps: Vec<i64>,
     #[serde(with = "non_finite")]
     pub values: Vec<f64>,
+    #[serde(default)]
     pub epochs: Vec<Option<i64>>,
     /// UTC microseconds.
+    #[serde(default)]
     pub timestamps: Vec<i64>,
 }
 
@@ -240,4 +248,79 @@ pub struct DeleteRuns {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Deleted {
     pub deleted: usize,
+}
+
+/// `POST runs`: a run with an id the client chose, so a retried request creates nothing twice.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct CreateRun {
+    /// A UUIDv7 as 32 lower-case hex digits (no dashes), chosen by the client.
+    pub id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub experiment: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tags: Vec<String>,
+    /// UTC microseconds; when the engine creates the run when left out.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<Micros>,
+    /// `training` (the default), `eval` or another word.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    /// What the run evaluates or trains: an object, or a string stored as `{"ref": ...}`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target: Option<Value>,
+}
+
+/// The answer to `POST runs`: the run, and whether this request created it. Creating a run that
+/// exists answers the existing run (`created: false`) and changes nothing.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct CreatedRun {
+    pub created: bool,
+    pub run: Run,
+}
+
+/// `POST runs/{id}/resume`: what a client needs to continue writing a run.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ResumedRun {
+    pub run: Run,
+    /// The parameters as a nested object.
+    pub params: Value,
+    pub series: Vec<ResumedSeries>,
+}
+
+/// A series of a resumed run and the step to continue after.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ResumedSeries {
+    pub name: String,
+    pub context: Value,
+    /// The metric key: `loss` or `loss[val]`.
+    pub key: String,
+    /// The highest step written; `None` for a series without points.
+    pub last_step: Option<i64>,
+}
+
+/// `POST runs/{id}/finish`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct FinishRun {
+    /// `finished`, `failed` or `aborted`.
+    pub status: RunStatus,
+    /// UTC microseconds; when the engine applies the request when left out.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ended_at: Option<Micros>,
+}
+
+/// How many records `POST runs/{id}/results` or `POST runs/{id}/features` stored.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Stored {
+    pub stored: usize,
+}
+
+/// `POST flush`: buffered writes are in storage and the catalog has read them.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Flushed {
+    /// When the catalog was refreshed (UTC microseconds).
+    pub refreshed_at: i64,
 }

@@ -10,7 +10,7 @@ use crate::drift::{BehaviourDrift, DriftConfig, FeatureDrift, Level, SuiteRun};
 use crate::model::RunStatus;
 
 /// An item as given by the user.
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct ItemInput {
     /// A stable id; derived from the input when absent.
     #[serde(default)]
@@ -612,4 +612,33 @@ pub struct ScheduleRunStarted {
     /// The first attempt's id.
     pub id: String,
     pub status: ScheduleRunStatus,
+}
+
+/// `POST runs/{id}/results`: per-item results of an eval run. Every result names the run of the
+/// path. A result replaces the one stored for the same item.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct PutResults {
+    pub results: Vec<EvalResult>,
+}
+
+/// `POST runs/{id}/features`: input feature samples of a run, for data drift. A sample replaces
+/// the one stored for the same feature.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct PutFeatures {
+    pub samples: Vec<FeatureSample>,
+}
+
+/// `POST datasets/{name}/versions` (with an `Idempotency-Key` header): commits a version.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct CommitDataset {
+    pub items: Vec<ItemInput>,
+    #[serde(default)]
+    pub mode: CommitMode,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// Where the items came from: `sdk`, `jsonl:<file name>`, `csv:<file name>`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
 }

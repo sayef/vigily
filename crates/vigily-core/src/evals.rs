@@ -32,9 +32,9 @@ use crate::records::RecordStore;
 use crate::store::now_micros;
 
 pub use vigily_api::evals::{
-    Alert, AlertKind, Baseline, BaselineMode, Changes, CommitMode, DatasetInfo, DatasetVersion,
-    EvalResult, FeatureSample, Item, ItemInput, ItemRef, Label, ScheduleRun, ScheduleRunStatus,
-    Score, Severity,
+    Alert, AlertKind, Baseline, BaselineMode, Changes, CommitDataset, CommitMode, DatasetInfo,
+    DatasetVersion, EvalResult, FeatureSample, Item, ItemInput, ItemRef, Label, ScheduleRun,
+    ScheduleRunStatus, Score, Severity,
 };
 
 /// A short, stable content hash: the first 16 hex digits of SHA-256.
@@ -369,6 +369,65 @@ pub async fn dataset_items(rs: &dyn RecordStore, v: &DatasetVersion) -> Result<V
 
 // ---------------------------------------------------------------------------------------------
 // Results, labels, features
+
+/// How long a dataset commit's `Idempotency-Key` is remembered: 24 hours, in microseconds.
+pub const IDEMPOTENCY_TTL: i64 = 24 * 3600 * 1_000_000;
+
+/// The version an idempotency key committed, under `idem/dataset/<hash of the key>`.
+#[derive(Serialize, Deserialize)]
+struct CommitKey {
+    dataset: String,
+    version: u32,
+    expires_at: i64,
+}
+
+/// Commits a dataset version once per idempotency `key`: a commit with a key used in the last
+/// [`IDEMPOTENCY_TTL`] answers the version that key committed, and `true`. The key record is
+/// stored with the commit, so a retry after a restart is recognised too. A key reused for another
+/// dataset is refused. The caller serialises commits.
+pub async fn commit_dataset_once(
+    rs: &dyn RecordStore,
+    key: &str,
+    name: &str,
+    req: CommitDataset,
+) -> Result<(DatasetVersion, bool)> {
+    check_name("dataset", name)?;
+    let digest: String = Sha256::digest(key.as_bytes())
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    let record = format!("idem/dataset/{digest}");
+    let now = now_micros();
+    if let Some(v) = rs.get(&record).await? {
+        let k: CommitKey = from_value(v)?;
+        if k.expires_at > now {
+            if k.dataset != name {
+                return Err(Error::InvalidArgument(format!(
+                    "this Idempotency-Key committed dataset {:?}; use a new key for each commit",
+                    k.dataset
+                )));
+            }
+            return Ok((dataset_version(rs, name, Some(k.version)).await?, true));
+        }
+    }
+    let v = commit_dataset(
+        rs,
+        name,
+        req.items,
+        req.mode,
+        req.note,
+        req.description,
+        req.source,
+    )
+    .await?;
+    let k = CommitKey {
+        dataset: name.to_string(),
+        version: v.version,
+        expires_at: now + IDEMPOTENCY_TTL,
+    };
+    rs.put(vec![(record, to_value(&k))]).await?;
+    Ok((v, false))
+}
 
 pub async fn put_results(rs: &dyn RecordStore, results: Vec<EvalResult>) -> Result<()> {
     let rows = results

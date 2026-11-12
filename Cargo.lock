@@ -6709,6 +6709,7 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "croner",
+ "flate2",
  "futures-util",
  "http-body-util",
  "libc",

@@ -72,6 +72,17 @@ The first release, published as betas (0.1.0-beta.N) before 0.1.0.
   `POST admin/optimize`; `POST traces/delete` for several traces, optionally erasing them; `POST
   schedules/{name}/run`, which answers 202 with the run's id at once; and `GET tracing/policy`.
   Admin routes accept only JSON from the server's own origin, like span ingest.
+- A write path for clients over HTTP: `POST /api/v1/runs` creates a run with an id the client
+  chooses (creating it again answers the existing run), `POST runs/{id}/resume`, `finish`,
+  `results` and `features`, `POST datasets/{name}/versions` (with a required `Idempotency-Key`,
+  remembered for 24 hours), `POST flush`, and `POST ingest`: ordered batches of operations with
+  points in columns, as JSON or NDJSON, optionally gzip-compressed. A replayed batch is answered
+  with its first report; a batch resent after an engine restart stores nothing twice because
+  clients assign steps. A finished run's results and feature samples are always in storage before
+  its status changes. Write bodies are limited to 32 MiB, ingest in flight to 256 MiB (then 503
+  with `Retry-After`), and a write to a deleted run answers `run_deleted`. Any write counts as the
+  run's heartbeat (at most one stored every two minutes), and new data shows up without waiting
+  for the next catalog refresh.
 
 ### Changed
 

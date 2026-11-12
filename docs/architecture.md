@@ -22,14 +22,14 @@ back unchanged, keys in the same order.
 | Module | What it holds |
 |---|---|
 | `model.rs` | Re-exports the run model from `vigily-api`: `Run`, `RunStatus`, `RunPatch`, `Series`, `Points`, `Summary`, metric keys (`loss[val]`), JSON flattening |
-| `store.rs` | The `Store` and `RunWriter` traits |
+| `store.rs` | The `Store` and `RunWriter` traits; `RunWriter::track_batch` writes one series' points given in columns (a loop over `track` until kv0 has `track_many`, docs/kv0-requests.md item 24) |
 | `memory.rs` | `MemoryStore`, used by the tests |
 | `kv0_store.rs` | `Kv0Store`, the adapter to `kv0::tracking` |
 | `catalog.rs` | `Catalog` and `Snapshot`: the in-memory index of runs, flattened parameters and series summaries; experiments, metric and parameter key lists; `select` (filter and sort); column ids |
 | `query.rs` | The run query language: tokenizer, parser, evaluation against a `RunView` |
 | `chart.rs` | X axes, `align` (exact union or min/max envelope on a shared grid), `aggregate` (mean, min, max per group) |
 | `records.rs` | The `RecordStore` trait; `MemoryRecords`; `Kv0Records` on kv0's records table |
-| `evals.rs` | Datasets and versions, eval results, labels, feature samples, schedule runs and state, alerts, baselines; the key layout |
+| `evals.rs` | Datasets and versions (with idempotent commits, `idem/dataset/<key hash>`), eval results, labels, feature samples, schedule runs and state, alerts, baselines; the key layout |
 | `stats.rs` | Mann–Whitney U, bootstrap intervals, PSI, Kolmogorov–Smirnov, chi-squared, Jensen–Shannon |
 | `drift.rs` | Suites, behaviour drift and data drift as forward passes over a suite's history |
 
@@ -82,8 +82,42 @@ Tracing endpoints (`traces_api.rs`, model and storage in `vigily-core/src/traces
 (`{ids, erase, force}`) and `GET /api/v1/tracing/policy?project=` (the payload policy a client applies
 before sending, and the one used while a trace's project is unknown).
 
-Routes that write outside the web app's forms (span ingest, admin, deleting traces, starting a
-schedule) accept only `Content-Type: application/json` and refuse an `Origin` other than the
+Write routes for clients (`write_api.rs`, write state in `writers.rs`):
+
+| Route | Answer |
+|---|---|
+| `POST /api/v1/runs` | `{id, name?, experiment?, description?, tags?, created_at?, kind?, target?}` with a client-chosen UUIDv7 (32 hex digits) → `{created, run}`; 201 when created, 200 with the existing run (unchanged) when the id exists |
+| `POST /api/v1/runs/{id}/resume` | opens the run for writing → `{run, params, series[{name, context, key, last_step}]}` |
+| `POST /api/v1/runs/{id}/finish` | `{status, ended_at?}` → the run; results and feature samples are flushed to storage first |
+| `POST /api/v1/runs/{id}/results` | `{results: [...]}` → `{stored}`; every result names this run |
+| `POST /api/v1/runs/{id}/features` | `{samples: [...]}` → `{stored}` |
+| `POST /api/v1/datasets/{name}/versions` | `{items, mode?, note?, description?, source?}` with a required `Idempotency-Key` → the version (201), or the version that key committed (200, `Idempotent-Replayed: true`); keys are kept 24 hours as records |
+| `POST /api/v1/ingest` | one batch `{writer, seq, ops}` (JSON) or one per line (`application/x-ndjson`) → the batch's report, or `{batches: [...]}` |
+| `POST /api/v1/flush` | commits buffered writes and refreshes the catalog → `{refreshed_at}` |
+
+An ingest batch is an ordered list of operations: `create`, `params`, `points` (one series in
+columns: `steps`, `values`, optional `epochs` and `timestamps`; NaN and infinities as strings),
+`update`, `heartbeat`, `finish`, `results` and `features`. The engine applies a batch's operations
+in order on a blocking thread, one batch per client writer at a time, and stops at the first
+failure, naming the operation (`operation 3 (points): ...`); a write to a deleted run is a 410
+`run_deleted`. Steps are assigned by the client, so a resent batch replaces points rather than
+adding them. On top of that the engine remembers, in memory, each writer's highest `seq` with its
+latest reports and recent `Idempotency-Key`s (15 minutes), and answers a replay with the first
+report (`replayed: true`) without applying it again.
+
+Open run writers live in a registry, closed when a run finishes or is deleted, after 15 minutes
+without writes, or least recently used beyond 4096. Any operation on a run counts as its
+heartbeat; the engine stores at most one heartbeat row per run every two minutes. After a write
+the background catalog refresh runs at once instead of waiting for its 2-second tick.
+
+Write bodies may be gzip-compressed (`Content-Encoding: gzip`) and are limited to 32 MiB after
+decompression (413 `too_large`). Ingest bodies in flight share a 256 MiB budget; above it ingest
+answers 503 `overloaded` with `Retry-After: 1`. Bodies over 1 MiB are decoded off the
+request-serving threads.
+
+Routes that write outside the web app's forms (the write routes above, span ingest, admin,
+deleting traces, starting a schedule) accept only `Content-Type: application/json` (ingest also
+`application/x-ndjson`; resume and flush also no body) and refuse an `Origin` other than the
 server's own, so a web page cannot trigger them. Routes added with `/api/v1` have no `/api` alias.
 
 Raw points of finished series are kept in a bounded cache (8 million points), so zooming re-samples
