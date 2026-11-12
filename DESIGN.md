@@ -28,7 +28,7 @@ service; importing other trackers' repositories.
 | `vigily-core` | api, kv0 (optional) | The model, queries and chart maths are testable without HTTP or Python |
 | `vigily-server` | api, core, ui, axum | The HTTP surface and the `vigily-engine` binary; tests drive it in memory with `tower::oneshot` |
 | `vigily-ui` | nothing at runtime | `build.rs` embeds `dist`, so the binary carries the app |
-| `vigily-cli` | server | The `vigily` binary |
+| `vigily-cli` | api (client) | The `vigily` binary: an HTTP client of the engine, without storage code (CI checks its tree) |
 | `vigily-py` | core, pyo3 | An abi3 extension (one wheel per platform for Python 3.11+) |
 
 ## Storage
@@ -435,6 +435,12 @@ absolute path find the same engine. The local token lives next to it and survive
 link or a script keeps working. Engines a client starts in the background stop after 30 idle
 minutes; `vigily up` never does. SIGTERM is handled like Ctrl-C, so `docker stop` and service
 managers get a clean shutdown with storage flushed.
+
+The command line is a client of that engine and nothing more: it depends on `vigily-api` alone, so
+it never opens storage next to a running engine, and a command behaves the same against a local
+engine and a team server (`--url`). I let a command start an engine in the background rather than
+fail, because a first `vigily runs` should just work; but not for a directory that does not exist,
+where starting an engine would create an empty repository by accident.
 
 ## Python SDK
 

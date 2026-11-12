@@ -1,16 +1,38 @@
 # Command line
 
 ```text
-vigily up         serve the web app, the API, the schedules and the drift monitor
-vigily runs       list runs in a terminal, newest first
-vigily runs purge erase deleted runs (and deleted traces) from storage
-vigily traces delete  delete traces by id; --erase also erases them
-vigily schedules  list the schedules of a configuration file, or run one now
-vigily optimize   compact storage and build the metrics index
+vigily up                 serve the web app, the API, the schedules and the drift monitor
+vigily status             whether an engine serves the repository, and where
+vigily stop               stop the repository's local engine
+vigily open               print the sign-in link and open it in a browser
+vigily env                print VIGILY_URL and VIGILY_TOKEN as shell exports
+vigily runs               list runs in a terminal, newest first
+vigily runs purge         erase deleted runs (and deleted traces) from storage
+vigily traces delete      delete traces by id; --erase also erases them
+vigily schedules          list the engine's schedules, or run one now
+vigily optimize           compact storage and build the metrics index
+vigily tokens             list, create or revoke access tokens
+vigily token rotate       replace the local engine's token
 ```
 
-Every command takes `--repo` (`-r`): a directory or an object-store URI such as
-`s3://bucket/prefix`. It defaults to `VIGILY_REPO`, then `./.vigily`.
+`vigily` is a client: every command but `up` talks to the engine that serves the repository over
+HTTP, and the binary contains no storage code. Global options:
+
+| Option | Default | |
+|---|---|---|
+| `--repo`, `-r` | `VIGILY_REPO`, then `./.vigily` | A directory or an object-store URI such as `s3://bucket/prefix` |
+| `--url` | `VIGILY_URL` | An engine's address, such as a team server; the repository's local engine is not used or started then |
+| `--token` | `VIGILY_TOKEN` | The token to send; a local engine's own token by default |
+
+Without `--url`, a command finds the repository's engine through its file in the
+[state directory](#the-state-directory). When none runs, it starts one in the background
+(`vigily-engine --detach`, found beside `vigily`, on `PATH`, or at `VIGILY_ENGINE`), waits for it
+(at most 30 seconds) and uses it; that engine stops after 30 idle minutes. Commands that only read
+or change an existing repository refuse to start an engine for a directory that does not exist:
+`vigily runs` on an empty directory says there is no repository. `vigily status` and `vigily stop`
+never start one.
+
+Exit codes: 0 on success, 1 on an error (the engine's message is printed), 2 for bad options.
 
 ## vigily up
 
@@ -99,17 +121,45 @@ compacts and purges as `vigily runs purge` does; see
 ## vigily schedules
 
 ```bash
-vigily schedules --config vigily.toml                    # list, with the next fire time
-vigily schedules --config vigily.toml run nightly-intents
+vigily schedules                       # the engine's schedules, with the next fire time
+vigily schedules run nightly-intents   # run one now on the engine and follow it
 ```
 
-`run` executes a schedule once, now, with the same timeout, retries and output capture as the
-server. It is the only way to start a schedule by hand; see [the security model](scheduled-evals.md#security-model).
+The schedules are those of the engine's configuration (`vigily up --config`). `run` starts the
+schedule on the engine, with the same timeout, retries and output capture as a scheduled run,
+prints each attempt as it ends, and exits 1 unless the last attempt succeeded. It needs an admin
+token (a local engine's own token is one); see [the security model](scheduled-evals.md#security-model).
+
+## vigily status, stop, open, env
+
+`vigily status` prints the engine's address, version, mode, process and how it was started, and
+exits 1 when no engine serves the repository. `vigily stop` sends the local engine SIGTERM and waits
+until it has flushed and exited. `vigily open` prints the link that signs a browser in (with the
+local token) and opens it when a desktop is available (`--no-browser` only prints it).
+`vigily env` prints `export VIGILY_URL=...` and `export VIGILY_TOKEN=...` for scripts:
+
+```bash
+eval "$(vigily env)"
+```
+
+## vigily tokens, vigily token rotate
+
+```bash
+vigily tokens list
+vigily tokens create nightly-evals --scope read --scope ingest --expires-in 90d
+vigily tokens revoke 3f9c0d1e2a4b5c6d
+vigily token rotate
+```
+
+Access tokens carry the scopes `read`, `ingest` and `admin` (see [Tokens](configuration.md#tokens));
+`create` prints the token once. An SDK or script that logs runs needs `read` and `ingest`.
+`token rotate` replaces a local engine's own token: the old link, cookie and exported
+`VIGILY_TOKEN` stop working, and the new link is printed.
 
 ## vigily optimize
 
-Compacts the repository's tables and indexes metrics. `vigily up` does this on its own; run it by
-hand after a large backfill when no server is running.
+Compacts the repository's tables and indexes metrics, on the engine. The engine does this on its
+own every 15 minutes; run it by hand after a large backfill.
 
 ## The query language
 

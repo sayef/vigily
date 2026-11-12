@@ -38,8 +38,8 @@ missed = "run_once"
 ```
 
 ```bash
-vigily schedules --config vigily.toml run nightly-intents   # try it once
-vigily up --config vigily.toml                              # then let the server keep time
+vigily up --config vigily.toml          # the server keeps time
+vigily schedules run nightly-intents    # in another shell: try it once now
 ```
 
 **Schedules** in the web app lists each schedule with its next fire time and its runs: attempts,
@@ -62,8 +62,9 @@ exit codes, durations, the last 64 KiB of stdout and stderr, and the eval runs e
 Scheduled commands are code execution on the server, so vigily keeps the rules short:
 
 - **Commands come only from the configuration file**, written by whoever operates the server. The
-  API and the web app can read schedules and their output but cannot create, change or start them.
-  Starting a schedule by hand is `vigily schedules run`, which needs a shell on the server.
+  API and the web app can read schedules and their output but cannot create or change them.
+  Starting a configured schedule by hand (`vigily schedules run`, `POST
+  /api/v1/schedules/{name}/run`) needs an admin token.
 - **Commands run as the user that runs vigily**, with its permissions and environment plus the
   schedule's `env`. Run vigily as a dedicated, unprivileged user, and give that user only the
   credentials the evaluations need.

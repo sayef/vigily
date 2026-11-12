@@ -17,7 +17,7 @@ tables; datasets, eval results, labels, schedules and alerts live in its key-val
 Object storage support is compiled in on request, which keeps the default binary small:
 
 ```bash
-cargo build --release -p vigily-cli --features s3              # or gcs, azure, or several
+cargo build --release -p vigily-server --features s3           # or gcs, azure, or several
 uv run --no-sync maturin develop --release --features s3         # the Python SDK, likewise
 ```
 

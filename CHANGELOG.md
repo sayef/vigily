@@ -104,8 +104,21 @@ The first release, published as betas (0.1.0-beta.N) before 0.1.0.
   structured errors and gzip-compressed large request bodies, and `vigily_api::local::resolve`,
   which finds a repository's engine (`VIGILY_URL`, then its state file) or starts one in the
   background. `GET /api/v1/schedules` also answers each schedule's `retry_delay`.
+- New commands: `vigily status`, `stop`, `open`, `env`, `tokens list|create|revoke` and
+  `token rotate` (`POST /api/v1/auth/local-token/rotate`, admin), and global `--url` and `--token`
+  options (`VIGILY_URL`, `VIGILY_TOKEN`) to use a team server.
 
 ### Changed
+
+- `vigily` is now a client of the engine: every command but `up` goes through the HTTP API, and the
+  binary no longer contains storage code (`vigily-core` and kv0 are out of its dependency tree).
+  Without `--url` it uses the repository's local engine, starting one in the background when none
+  runs (not for a directory that does not exist). `vigily up` runs `vigily-engine` in the
+  foreground with the same options and output. `vigily schedules` lists the engine's schedules
+  (`--config` is gone; it is an option of `vigily up`), and `vigily schedules run` starts the run on
+  the engine and follows it through its retries, exiting 1 unless it succeeds. Release archives
+  and the Docker image contain both `vigily` and `vigily-engine`, and `scripts/install.sh` installs
+  both; the `s3`, `gcs` and `azure` features move to the `vigily-server` crate.
 
 - The local token moves to `engines/<key>.token` in the state directory, which defaults to
   `~/Library/Caches/vigily` on macOS (`~/.cache/vigily` elsewhere); a token kept by an earlier
