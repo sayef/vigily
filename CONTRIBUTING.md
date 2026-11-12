@@ -24,7 +24,7 @@ For UI work, `npm run dev` in `crates/vigily-ui` serves the app with hot reload 
 vigily depends on kv0 by git, on its `main` branch:
 
 ```toml
-kv0 = { git = "https://github.com/sayef/kv0", branch = "main", version = "0.2", default-features = false }
+kv0 = { git = "https://github.com/sayef/kv0", branch = "main", version = "0.1.0-beta.1", default-features = false }
 ```
 
 Cargo builds from git; the `version` is what crates.io will use once kv0 is published, and it keeps
@@ -118,9 +118,25 @@ Releases are automated and stay off until the `RELEASE_ENABLED` repository varia
    A failed check leaves a pre-release that `latest` downloads never see; fix it and release again,
    or run the Release workflow by hand for the tag.
 
-A tag pushed by hand (`git tag v0.2.0 && git push origin v0.2.0`) goes through steps 3 to 5 as
-well. Tags with a suffix, such as `v0.2.0-rc.1`, stay pre-releases and never become `latest`.
+A tag pushed by hand (`git tag v0.1.0 && git push origin v0.1.0`) goes through steps 3 to 5 as
+well. Tags with a suffix, such as `v0.1.0-beta.2` or `v0.1.0-rc.1`, stay pre-releases and never
+become `latest`: the release, the `X.Y` image tag and the `latest` image tag are left alone.
 Nothing is published to crates.io or PyPI: kv0 is not on crates.io yet.
+
+The first versions are betas toward 0.1.0. The version is `version` in `[workspace.package]`; the
+wheels carry its PEP 440 form (`0.1.0-beta.1` is `0.1.0b1`).
+
+- **The first beta.** There is no tag yet, so the first release pull request releases the current
+  version, `0.1.0-beta.1`, as it is.
+- **The next beta.** From a pre-release, release-plz bumps the last number (`0.1.0-beta.1` to
+  `0.1.0-beta.2`); merging the release pull request cuts it.
+- **0.1.0.** release-plz never leaves a pre-release on its own, so I set the version explicitly:
+  `version = "0.1.0"` in `[workspace.package]` and in the `vigily-*` entries of
+  `[workspace.dependencies]` (or `release-plz set-version`), then `cargo update -w`, either in the
+  release pull request or in a pull request of its own. release-plz keeps a version that is higher
+  than the last tag. The same works for `0.1.0-rc.1`.
+- kv0 is versioned the same way; the `version` of the kv0 dependency names its exact pre-release
+  (`"0.1"` does not match `0.1.0-beta.1`), so move it along with kv0.
 
 What the workflows need:
 
