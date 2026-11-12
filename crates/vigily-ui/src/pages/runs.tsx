@@ -173,40 +173,55 @@ export function RunsPage() {
     return () => window.removeEventListener("keydown", on);
   }, [rows, active, selection, navigate, compare, virt]);
 
-  // Loss curves for the training rows in view, on one scale per experiment.
-  const groups = new Map<string, string[]>();
+  // Loss curves for the training rows in view. Each run is drawn over its own steps, so a live run
+  // a few thousand steps in is not squeezed into the first pixels by a long finished run; the
+  // y scale is shared per experiment so the rows stay comparable.
+  const sparkIds: string[] = [];
   for (const v of virt.getVirtualItems()) {
     const r = rows[v.index];
-    if (!r || r.kind !== "training") continue;
-    const g = r.experiment ?? "";
-    groups.set(g, [...(groups.get(g) ?? []), r.id]);
+    if (r && r.kind === "training") sparkIds.push(r.id);
   }
-  const groupKeys = [...groups.entries()].map(([g, ids]) => [g, [...ids].sort().join(",")] as const).sort((a, b) => a[0].localeCompare(b[0]));
+  sparkIds.sort();
   const sparkQueries = useQueries({
-    queries: groupKeys.map(([g, ids]) => ({
-      queryKey: ["sparks", loss, g, ids],
-      queryFn: ({ signal }: { signal: AbortSignal }) => api.chart({ runs: ids.split(","), metric: loss!, x: "step", points: 48 }, signal),
+    queries: sparkIds.map((id) => ({
+      queryKey: ["spark", loss, id],
+      queryFn: ({ signal }: { signal: AbortSignal }) => api.chart({ runs: [id], metric: loss!, x: "step", points: 48 }, signal),
       enabled: !!loss && !narrow,
-      placeholderData: keepPreviousData,
       staleTime: 15_000,
     })),
   });
-  const sparkStamp = sparkQueries.map((q) => q.dataUpdatedAt).join(",");
+  const sparkStamp = sparkQueries.map((q) => `${q.dataUpdatedAt}:${q.status}`).join(",");
   const spark = useMemo(() => {
-    const by = new Map<string, { values: (number | null)[]; domain: [number, number] }>();
-    for (const q of sparkQueries) {
-      const d = q.data;
-      if (!d) continue;
-      const ys = d.series.flatMap((s) => s.y).filter((v): v is number => v !== null && isFinite(v));
+    const series = new Map<string, (number | null)[] | null>();
+    sparkIds.forEach((id, i) => {
+      const d = sparkQueries[i]?.data;
+      if (d) series.set(id, d.series.find((s) => s.run_id === id)?.y ?? null);
+    });
+    const experimentOf = new Map(rows.map((r) => [r.id, r.experiment ?? ""] as const));
+    const pooled = new Map<string, number[]>();
+    for (const [id, y] of series) {
+      if (!y) continue;
+      const g = experimentOf.get(id) ?? "";
+      const ys = pooled.get(g) ?? [];
+      for (const v of y) if (v !== null && isFinite(v)) ys.push(v);
+      pooled.set(g, ys);
+    }
+    const domains = new Map<string, [number, number]>();
+    for (const [g, ys] of pooled) {
       if (!ys.length) continue;
-      const sorted = [...ys].sort((a, b) => a - b);
+      const sorted = ys.sort((a, b) => a - b);
       // Clip the top 2 % so one diverging run does not flatten the others.
-      const domain: [number, number] = [sorted[0], sorted[Math.floor(sorted.length * 0.98)] ?? sorted.at(-1)!];
-      for (const s of d.series) by.set(s.run_id, { values: s.y, domain });
+      domains.set(g, [sorted[0], sorted[Math.floor(sorted.length * 0.98)] ?? sorted.at(-1)!]);
+    }
+    const by = new Map<string, SparkData>();
+    for (const [id, y] of series) {
+      const domain = domains.get(experimentOf.get(id) ?? "");
+      const finite = y?.some((v) => v !== null && isFinite(v));
+      by.set(id, y && finite && domain ? { values: y, domain } : "none");
     }
     return by;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sparkStamp]);
+  }, [sparkStamp, sparkIds.join(","), rows]);
 
   // The best value in each best-of column gets a star.
   const best = useMemo(() => {
@@ -439,7 +454,7 @@ export function RunsPage() {
                   const l = metricLabel(loss!);
                   return [
                     head,
-                    <th key="spark" scope="col" className="h-11 border-b bg-background px-3 text-left" title={`${loss}, every run on one scale`}>
+                    <th key="spark" scope="col" className="h-11 border-b bg-background px-3 text-left" title={`${loss}: every run over its own steps, on one scale per experiment`}>
                       {l.name}
                       {l.context && <span className="block text-[10.5px] font-normal normal-case tracking-normal">{l.context}, one scale</span>}
                     </th>,
@@ -462,7 +477,7 @@ export function RunsPage() {
                     active={active === vi.index}
                     onToggle={() => selection.toggle(r.id)}
                     best={best}
-                    spark={showSpark ? { after: sparkAfter, values: spark.get(r.id)?.values ?? null, domain: spark.get(r.id)?.domain ?? null, metric: loss! } : null}
+                    spark={showSpark ? { after: sparkAfter, data: spark.get(r.id) ?? null, metric: loss! } : null}
                   />
                 );
               })}
@@ -568,7 +583,7 @@ function Cell({ c, run, letter, best }: { c: ColumnDef; run: RunRow; letter: str
   const v = c.cell(run);
   if (c.id === "run:experiment" && run.experiment)
     return (
-      <Link to={`/?q=${encodeURIComponent(`exp="${run.experiment}"`)}`} className="block truncate py-1 text-muted-foreground hover:text-foreground hover:underline">
+      <Link to={`/?q=${encodeURIComponent(`exp="${run.experiment}"`)}`} className="block truncate py-1 text-muted-foreground hover:text-foreground hover:underline" title={run.experiment ?? undefined}>
         {run.experiment}
       </Link>
     );
@@ -592,10 +607,13 @@ function Cell({ c, run, letter, best }: { c: ColumnDef; run: RunRow; letter: str
   );
 }
 
+/** A run's loss curve on its experiment's scale, or "none" when the run has not logged the metric. */
+type SparkData = { values: (number | null)[]; domain: [number, number] } | "none";
+
 interface SparkCell {
   after: number;
-  values: (number | null)[] | null;
-  domain: [number, number] | null;
+  /** null while loading. */
+  data: SparkData | null;
   metric: string;
 }
 
@@ -623,8 +641,12 @@ function Row({ run, columns, index, letter, selected, active, onToggle, best, sp
           <td key="spark" className={cn("border-b px-3", bg)}>
             {run.kind !== "training" ? (
               <span className="text-faint">–</span>
-            ) : spark.values && spark.domain ? (
-              <Sparkline values={spark.values} domain={spark.domain} color={sparkColor} width={SPARK - 24} label={`${spark.metric} of ${run.name}`} />
+            ) : spark.data === "none" ? (
+              <span className="text-xs text-faint" title={`${run.name} has not logged ${spark.metric}`}>
+                {run.status === "running" ? "No points yet" : "Not logged"}
+              </span>
+            ) : spark.data ? (
+              <Sparkline values={spark.data.values} domain={spark.data.domain} color={sparkColor} width={SPARK - 24} label={`${spark.metric} of ${run.name}`} />
             ) : (
               <Skeleton className="h-4 w-full" />
             )}

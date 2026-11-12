@@ -115,12 +115,18 @@ function SidebarFoot() {
   const meta = useMeta();
   const up = !meta.isError;
   return (
-    <div className="mt-auto flex items-center justify-between border-t px-5 py-3 text-xs text-faint">
-      <span className="flex items-center gap-2">
+    // A pre-release version ("v0.1.0-beta.1") does not fit beside the status in 232 px: it moves to
+    // its own line whole instead of breaking at the hyphen, and only truncates past the full width.
+    <div className="mt-auto flex flex-wrap items-center gap-x-3 gap-y-1 border-t px-5 py-3 text-xs text-faint">
+      <span className="flex items-center gap-2 whitespace-nowrap">
         <span className={cn("inline-block size-[7px]", up ? "bg-brand" : "bg-danger")} aria-hidden />
         {up ? "Server running" : "Server unreachable"}
       </span>
-      {meta.data && <span className="font-mono nums">v{meta.data.version}</span>}
+      {meta.data && (
+        <span className="ml-auto min-w-0 max-w-full truncate whitespace-nowrap font-mono nums" title={`vigily ${meta.data.version}`}>
+          v{meta.data.version}
+        </span>
+      )}
     </div>
   );
 }

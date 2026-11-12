@@ -78,9 +78,9 @@ export function SchedulesPage() {
     <div className="px-4 pb-16 pt-5 md:px-6">
       <PageHeader title="Schedules">
         {d?.config_path ? (
-          <>
+          <span>
             Defined in <code className="text-foreground">{d.config_path}</code>. Times are shown in your time zone; hover for UTC.
-          </>
+          </span>
         ) : d ? (
           "No configuration file is loaded."
         ) : (

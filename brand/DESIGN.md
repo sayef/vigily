@@ -244,7 +244,7 @@ density: { row: 42px, toolbar: 52px top bar, control: 36px (44px on coarse point
 - Figures: four large light numbers with tracked labels and one note each, divided by hairlines; two
   per row on phones.
 - Runs table: dense, virtualised, sticky header and first column, sortable, column picker, a loss
-  sparkline per row on one scale per experiment, an ink-blue star on the best value. Selected rows get
+  sparkline per row over the run's own steps on one scale per experiment, an ink-blue star on the best value. Selected rows get
   their letter in a square and an ink bar. On phones the rows become two lines in their own scroller.
 - Selection bar: solid ink along the bottom with the count, the letters, keyboard hints (`c` compare,
   `x` toggle, `Esc` clear) and a paper-coloured "Compare N runs" button.

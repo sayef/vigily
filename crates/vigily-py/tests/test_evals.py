@@ -143,3 +143,33 @@ def test_results_are_stored_before_the_run_is_finished(repo):
         assert len(json.loads(r._repo.results(run_id))) == 50
     finally:
         p.kill()
+
+
+def test_demo_evaluations_form_one_scored_drift_suite(repo):
+    """The demo's evaluations must be ones drift can compare: a suite is the eval runs sharing an
+    experiment, a target and a dataset name, and drift reads their ``eval/<score>`` metrics. Runs
+    that only track plain metrics leave every suite empty on the Drift page."""
+    import importlib.util
+    import pathlib
+    import time
+
+    path = pathlib.Path(__file__).parents[3] / "examples" / "demo.py"
+    spec = importlib.util.spec_from_file_location("vigily_demo", path)
+    demo = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(demo)
+    demo.evals(repo, time.time())
+
+    r = Repo(repo)
+    runs = sorted((x for x in r.runs() if x["kind"] == "eval"), key=lambda x: x["created_at"])
+    assert [x["name"] for x in runs] == [f"eval-bert-lr2e-05-seed{s}" for s in (1, 2, 3)]
+
+    def dataset(run_id):
+        return ((r.params(run_id).get("__eval__") or {}).get("dataset") or {}).get("name")
+
+    suites = {(x["experiment"], json.dumps(x["target"], sort_keys=True), dataset(x["id"])) for x in runs}
+    assert len(suites) == 1, f"the demo evaluations split into {len(suites)} suites"
+    for x in runs:
+        assert x["status"] == "finished"
+        scores = r.metric(x["id"], "eval/exact_match")["values"]
+        assert len(scores) == 1, f"{x['name']} recorded no eval/exact_match score"
+        assert 0.8 < scores[0] <= 1.0

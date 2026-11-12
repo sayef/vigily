@@ -18,7 +18,8 @@ import os
 import random
 import time
 
-from vigily import Repo, Run
+from vigily import Dataset, Repo, Run, evaluate
+from vigily import evaluators as ev
 
 DAY = 86_400.0
 
@@ -328,33 +329,60 @@ def bert(repo: str, rng: random.Random, now: float) -> None:
                 run.finish(ended_at=t)
 
 
-def evals(repo: str, rng: random.Random, now: float) -> None:
-    """Evaluation runs: three fine-tuned checkpoints scored on a held-out split, item by item."""
+SST2_OPENERS = ["The film", "This movie", "The script", "The cast", "The ending", "The soundtrack"]
+SST2_POSITIVE = ["is a quiet delight", "earns every minute", "lands with real warmth", "is sharp and funny"]
+SST2_NEGATIVE = ["drags badly", "never finds its footing", "is flat and forgettable", "wastes a good premise"]
+SST2_TAILS = ["", " from start to finish", " despite a slow start", " in its second half"]
+
+
+def sst2_items() -> list[dict]:
+    """A small synthetic sentiment test split in the shape of SST-2: a sentence and its label."""
+    items = []
+    for label, phrases in (("positive", SST2_POSITIVE), ("negative", SST2_NEGATIVE)):
+        for opener in SST2_OPENERS:
+            for phrase in phrases:
+                for tail in SST2_TAILS:
+                    items.append({"input": f"{opener} {phrase}{tail}.", "expected": label})
+    return items
+
+
+def sst2_checkpoint(seed: int, quality: float):
+    """A stand-in for a fine-tuned checkpoint: right on a fixed, seed-dependent share of sentences."""
+
+    def predict(text: str) -> str:
+        right = random.Random(f"{seed}:{text}").random() < quality
+        positive = any(p in text for p in SST2_POSITIVE)
+        return "positive" if positive == right else "negative"
+
+    return predict
+
+
+def evals(repo: str, now: float) -> None:
+    """Evaluation runs: three seeds of one fine-tuning recipe scored item by item on a held-out split.
+
+    They share an experiment, a target and a dataset, so they form one drift suite: each newer seed
+    is compared with the seeds before it.
+    """
+    ds = Dataset.create(
+        "sst2-test",
+        sst2_items(),
+        description="Synthetic movie-review sentences with a positive or negative label",
+        note="Initial split",
+        repo=repo,
+    )
     for i, (seed, quality) in enumerate([(1, 0.912), (2, 0.927), (3, 0.919)]):
-        created = now - (1.5 - i * 0.2) * DAY
-        run = Run(
-            repo=repo,
+        evaluate(
+            ds,
+            sst2_checkpoint(seed, quality),
+            [ev.exact_match()],
+            target_ref={"model": "bert-lr2e-05", "dataset": "sst2-test"},
             experiment="sst2-eval",
             name=f"eval-bert-lr2e-05-seed{seed}",
-            kind="eval",
-            target={
-                "model": f"bert-lr2e-05-seed{seed}",
-                "dataset": "sst2-test",
-                "git": f"{0x4F2C1AB + i:07x}",
-            },
-            created_at=created,
-            tags=["holdout"],
+            tags=["holdout", f"seed{seed}"],
+            created_at=now - (3.2 - i) * DAY,
+            concurrency=1,
+            repo=repo,
         )
-        run["eval"] = {"split": "test", "items": 1821, "batch_size": 64}
-        correct = 0
-        t = created
-        for item in range(1, 1822):
-            correct += rng.random() < quality
-            if item % 16 == 0 or item == 1821:
-                t = created + item * 0.05
-                run.track(correct / item, name="accuracy", step=item, context={"subset": "test"}, timestamp=t)
-                run.track(abs(noisy(rng, 41.0, 6.0)), name="latency_ms", step=item, timestamp=t)
-        run.finish(ended_at=t)
 
 
 # An example price table (per million tokens) for the synthetic models; not real prices.
@@ -510,7 +538,7 @@ def main() -> None:
     mnist(args.repo, rng, now)
     gpt(args.repo, rng, now, args.long_points)
     bert(args.repo, rng, now)
-    evals(args.repo, rng, now)
+    evals(args.repo, now)
     traces(args.repo, rng, now)
     repo = Repo(args.repo)
     repo.flush()

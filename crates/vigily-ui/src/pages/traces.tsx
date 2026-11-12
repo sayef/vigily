@@ -28,7 +28,7 @@ const RANGES = [
 ] as const;
 type Range = (typeof RANGES)[number][0];
 
-const select = "h-9 max-w-full border border-input bg-card px-2.5 text-sm pointer-coarse:h-11 max-sm:w-auto max-sm:min-w-0 max-sm:flex-1";
+const select = "h-9 max-w-full border border-input bg-card px-2.5 text-sm pointer-coarse:h-11 max-sm:w-auto max-sm:min-w-0 max-sm:flex-1 max-sm:basis-[calc(50%-0.3125rem)]";
 
 export function TracesPage() {
   useTitle("Traces");

@@ -78,7 +78,7 @@ export function DatasetsPage() {
                 ))}
               {list.map((d) => (
                 <tr key={d.name} className="hover:bg-muted">
-                  <th scope="row" className="h-11 border-b px-3 text-left font-medium">
+                  <th scope="row" className="h-11 whitespace-nowrap border-b px-3 text-left font-medium">
                     <Link to={`/datasets/${encodeURIComponent(d.name)}`} className="inline-flex min-h-8 items-center gap-2 hover:underline">
                       <Database className="size-4 text-muted-foreground" aria-hidden />
                       {d.name}
@@ -134,8 +134,10 @@ export function DatasetPage() {
       <PageHeader title={<span className="font-mono">{name}</span>}>
         {d ? (
           <>
-            {d.info.description && <span className="text-foreground">{d.info.description}. </span>}
-            Version {d.version.version} of {d.info.latest}, {integer(d.version.items)} items, digest <code className="text-foreground">{d.version.digest}</code>.
+            {d.info.description && <span className="text-foreground">{d.info.description}.</span>}
+            <span>
+              Version {d.version.version} of {d.info.latest}, {integer(d.version.items)} items, digest <code className="text-foreground">{d.version.digest}</code>.
+            </span>
           </>
         ) : (
           " "
