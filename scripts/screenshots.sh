@@ -20,7 +20,7 @@ fi
 
 if [ "${SKIP_BUILD:-}" != 1 ]; then
   (cd crates/vigily-ui && npm ci --silent --no-audit --no-fund && npm run build --silent)
-  cargo build --release -p vigily-cli
+  cargo build --release -p vigily-cli -p vigily-server
   uv sync --no-install-project --quiet
   uv run --no-sync maturin develop --release --quiet
 fi

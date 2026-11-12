@@ -53,6 +53,12 @@ jobs:
         with:
           tool: cargo-machete@0.9.2
       - run: cargo machete
+      - name: The command line has no storage in its tree
+        run: |
+          if cargo tree -p vigily-cli -e normal --prefix none | grep -E '^(vigily-core|vigily-server|kv0) '; then
+            echo "vigily-cli must depend on vigily-api only, not on storage or the engine" >&2
+            exit 1
+          fi
 
   ui:
     runs-on: ubuntu-latest

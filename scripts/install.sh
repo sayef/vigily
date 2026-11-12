@@ -1,11 +1,11 @@
 #!/bin/sh
-# Install the `vigily` binary from a GitHub release, without building it.
+# Install `vigily` and `vigily-engine` from a GitHub release, without building them.
 #
 #   curl -LsSf https://raw.githubusercontent.com/sayef/vigily/main/scripts/install.sh | sh
 #
 # Environment:
 #   VIGILY_VERSION       release tag to install, such as v0.1.0-beta.1 (default: the latest release)
-#   VIGILY_INSTALL_DIR   where to put the binary (default: $HOME/.local/bin)
+#   VIGILY_INSTALL_DIR   where to put the binaries (default: $HOME/.local/bin)
 #   VIGILY_DOWNLOAD_BASE where the release files are (default: the GitHub release); for testing
 #
 # The archive's SHA-256 is checked against the release's checksum file before anything is
@@ -84,14 +84,19 @@ main() {
     fail "checksum mismatch for $asset (expected ${want:-nothing}, got $got); nothing was installed"
   fi
 
-  tar -C "$tmp" -xzf "$tmp/$asset" vigily || fail "$asset does not contain a vigily binary"
+  tar -C "$tmp" -xzf "$tmp/$asset" || fail "could not unpack $asset"
+  [ -f "$tmp/vigily" ] || fail "$asset does not contain a vigily binary"
   mkdir -p "$install_dir" || fail "could not create $install_dir"
-  # Move a new file into place rather than overwriting: macOS kills a binary rewritten in place.
-  cp "$tmp/vigily" "$install_dir/vigily.new"
-  chmod 755 "$install_dir/vigily.new"
-  mv -f "$install_dir/vigily.new" "$install_dir/vigily"
+  # The command line and the engine it starts (releases before 0.1.0-beta.3 have only vigily).
+  for bin in vigily vigily-engine; do
+    [ -f "$tmp/$bin" ] || continue
+    # Move a new file into place rather than overwriting: macOS kills a binary rewritten in place.
+    cp "$tmp/$bin" "$install_dir/$bin.new"
+    chmod 755 "$install_dir/$bin.new"
+    mv -f "$install_dir/$bin.new" "$install_dir/$bin"
+  done
 
-  say "installed $("$install_dir/vigily" --version) to $install_dir/vigily"
+  say "installed $("$install_dir/vigily" --version) to $install_dir"
   case ":${PATH:-}:" in
     *":$install_dir:"*) ;;
     *)

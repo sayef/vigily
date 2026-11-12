@@ -116,14 +116,17 @@ jobs:
         with:
           toolchain: stable
           targets: ${{ matrix.target }}
-      - run: cargo build --release --locked --target "$TARGET" -p vigily-cli --features s3,gcs,azure
+      # The engine carries storage and the object-store backends; the command line is a client.
+      - run: |
+          cargo build --release --locked --target "$TARGET" -p vigily-server --features s3,gcs,azure
+          cargo build --release --locked --target "$TARGET" -p vigily-cli
         working-directory: vigily
         env:
           TARGET: ${{ matrix.target }}
       - name: Package with a checksum
         run: |
           a="vigily-${TARGET}.tar.gz"
-          tar czf "$a" -C "vigily/target/${TARGET}/release" vigily
+          tar czf "$a" -C "vigily/target/${TARGET}/release" vigily vigily-engine
           if command -v sha256sum >/dev/null; then sha256sum "$a" > "$a.sha256"; else shasum -a 256 "$a" > "$a.sha256"; fi
         env:
           TARGET: ${{ matrix.target }}

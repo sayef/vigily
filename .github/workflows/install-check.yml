@@ -1,6 +1,7 @@
 name: Install check
 
-# Installs a published release with scripts/install.sh, as users do, then starts the server once.
+# Installs a published release with scripts/install.sh, as users do, then starts the engine once
+# and asks it for its status with the command line.
 # Callable from the release workflow, or by hand for any tag.
 on:
   workflow_call:
@@ -44,17 +45,20 @@ jobs:
         run: |
           sh scripts/install.sh
           "$VIGILY_INSTALL_DIR/vigily" --version | grep -F "${VIGILY_VERSION#v}"
-      - name: The server starts and answers
+          "$VIGILY_INSTALL_DIR/vigily-engine" --version | grep -F "${VIGILY_VERSION#v}"
+      - name: The engine starts and vigily status finds it
         env:
           VIGILY: ${{ runner.temp }}/bin/vigily
           VIGILY_REPO: ${{ runner.temp }}/repo
+          VIGILY_STATE_DIR: ${{ runner.temp }}/state
         run: |
           "$VIGILY" up --port 7600 > "$RUNNER_TEMP/up.log" 2>&1 &
           pid=$!
           ok=
           for _ in $(seq 30); do
-            if curl -fsS http://127.0.0.1:7600/api/health; then ok=1; break; fi
+            if curl -fsS http://127.0.0.1:7600/api/v1/health; then ok=1; break; fi
             sleep 1
           done
+          [ -n "$ok" ] && "$VIGILY" status || ok=
           kill "$pid"
           [ -n "$ok" ] || { cat "$RUNNER_TEMP/up.log"; exit 1; }
