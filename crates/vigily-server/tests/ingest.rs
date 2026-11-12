@@ -739,3 +739,29 @@ async fn rest_routes_store_results_and_finish() {
     assert_eq!(st, StatusCode::OK, "{v}");
     assert!(v["refreshed_at"].as_i64().unwrap() > 0);
 }
+
+#[tokio::test]
+async fn an_explicit_heartbeat_is_stored_at_once() {
+    let app = router(memory());
+    let create = batch(
+        "hb",
+        1,
+        vec![json!({"op": "create", "id": RUN, "name": "hb"})],
+    );
+    assert_eq!(ingest(&app, &create, None).await.0, StatusCode::OK);
+    post(&app, "/api/v1/flush", json!({})).await;
+    let (_, before) = get(&app, &format!("/api/v1/runs/{RUN}")).await;
+    tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+    let beat = batch("hb", 2, vec![json!({"op": "heartbeat", "run_id": RUN})]);
+    assert_eq!(ingest(&app, &beat, None).await.0, StatusCode::OK);
+    post(&app, "/api/v1/flush", json!({})).await;
+    let (_, after) = get(&app, &format!("/api/v1/runs/{RUN}")).await;
+    assert!(
+        after["updated_at"].as_i64() > before["updated_at"].as_i64(),
+        "{before} {after}"
+    );
+    assert_eq!(
+        (after["name"].clone(), after["status"].clone()),
+        (json!("hb"), json!("running"))
+    );
+}

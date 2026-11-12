@@ -43,8 +43,8 @@ pub enum Op {
     Points(SeriesPoints),
     /// Changes the run's metadata.
     Update { run_id: String, patch: RunPatch },
-    /// The writing process is alive. Any operation on a run counts; the engine stores at most one
-    /// heartbeat per run every two minutes.
+    /// The writing process is alive. Stored as sent; any other operation on a run counts as well,
+    /// of which the engine stores at most one heartbeat per run every two minutes.
     Heartbeat { run_id: String },
     /// Ends the run, after everything before it in the batch is in storage.
     Finish {
