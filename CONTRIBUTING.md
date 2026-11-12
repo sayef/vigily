@@ -121,7 +121,22 @@ Releases are automated and stay off until the `RELEASE_ENABLED` repository varia
 A tag pushed by hand (`git tag v0.1.0 && git push origin v0.1.0`) goes through steps 3 to 5 as
 well. Tags with a suffix, such as `v0.1.0-beta.2` or `v0.1.0-rc.1`, stay pre-releases and never
 become `latest`: the release, the `X.Y` image tag and the `latest` image tag are left alone.
-Nothing is published to crates.io or PyPI: kv0 is not on crates.io yet.
+
+**PyPI.** Once the binaries and wheels built, the Release workflow's `pypi` job uploads the wheels
+and the sdist to PyPI as `vigily`, pre-releases included: `v0.1.0-beta.1` becomes `0.1.0b1`,
+which PyPI marks as a pre-release and pip installs only with `--pre` or an exact version. It uses
+trusted publishing, with no token. The trusted publisher on PyPI is: project `vigily`, owner
+`sayef`, repository `vigily`, workflow `release.yml`, environment `pypi`. Renaming the workflow file
+or the environment breaks the upload until the publisher is updated to match.
+
+**crates.io.** Nothing is published there yet: kv0 is not on crates.io. Once `kv0 0.1.0-beta.1` is:
+
+1. In `release-plz.toml`, set `publish = true` and remove `git_only`. `vigily-py` keeps
+   `publish = false` in its `Cargo.toml` (it ships as a wheel); every other crate is published.
+2. Keep the kv0 requirement in `Cargo.toml` at the exact pre-release version (`0.1.0-beta.1`);
+   publishing ignores the git source.
+3. The `CARGO_REGISTRY_TOKEN` repository secret already exists. Pass it to the `release` step in
+   `release-plz.yml` (`CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}`).
 
 The first versions are betas toward 0.1.0. The version is `version` in `[workspace.package]`; the
 wheels carry its PEP 440 form (`0.1.0-beta.1` is `0.1.0b1`).

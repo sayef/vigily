@@ -6,7 +6,9 @@ name: Release
 #   2. push the image to ghcr.io with its version tags;
 #   3. install the release with scripts/install.sh and run it on older distributions;
 #   4. only when all of that passed, mark the release as the latest and tag the image `latest`.
-# A failure leaves a pre-release that `latest` downloads never see. Nothing goes to crates.io or PyPI.
+# A failure leaves a pre-release that `latest` downloads never see. Once the binaries and wheels
+# built, the wheels and the sdist go to PyPI (pre-release tags too: v0.1.0-beta.1 is 0.1.0b1, which
+# pip installs only when asked). Nothing goes to crates.io yet (see release-plz.toml).
 # Nothing runs until the RELEASE_ENABLED repository variable is `true` (see CONTRIBUTING.md).
 on:
   push:
@@ -161,8 +163,47 @@ jobs:
           name: wheels-${{ matrix.os }}
           path: vigily/dist
 
+  sdist:
+    needs: tag
+    if: needs.tag.outputs.tag != ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.tag.outputs.tag }}
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: false
+      - run: uvx maturin sdist --out dist
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: wheels-sdist
+          path: dist
+
+  # Trusted publishing: PyPI accepts this workflow file in the `pypi` environment (see
+  # CONTRIBUTING.md); there is no token.
+  pypi:
+    needs: [tag, binary, wheels, sdist]
+    if: >-
+      github.repository_owner == 'sayef' && vars.RELEASE_ENABLED == 'true'
+      && needs.tag.outputs.tag != ''
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: wheels-*
+          path: dist
+          merge-multiple: true
+      - uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
+        with:
+          skip-existing: true
+
   publish:
-    needs: [tag, binary, wheels]
+    needs: [tag, binary, wheels, sdist]
     runs-on: ubuntu-latest
     permissions:
       contents: write
