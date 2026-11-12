@@ -2,10 +2,7 @@
 # vigily.toml under /data. `release` (the default) compiles inside Docker; `local` packages a Linux
 # binary built outside it (scripts/docker-local.sh).
 #
-#   docker build --secret id=gh_token,env=GH_TOKEN -t vigily .
-#
-# The `gh_token` secret reads kv0, a private git dependency for now. It is mounted only while cargo
-# fetches dependencies, never written to a layer, and goes away once kv0 is public or on crates.io.
+#   docker build -t vigily .
 
 FROM node:24-bookworm-slim AS ui
 WORKDIR /src/crates/vigily-ui
@@ -22,18 +19,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends protobuf-compil
 WORKDIR /src
 COPY . .
 COPY --from=ui /src/crates/vigily-ui/dist crates/vigily-ui/dist
-# Fetch with the token, through an environment-only git setting that ends with this RUN.
-RUN --mount=type=secret,id=gh_token,required=false \
-    --mount=type=cache,target=/usr/local/cargo/registry \
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
-    if [ -s /run/secrets/gh_token ]; then \
-      GIT_CONFIG_COUNT=1 \
-      GIT_CONFIG_KEY_0="url.https://x-access-token:$(cat /run/secrets/gh_token)@github.com/sayef/kv0.insteadOf" \
-      GIT_CONFIG_VALUE_0="https://github.com/sayef/kv0" \
-      cargo fetch --locked; \
-    else \
-      cargo fetch --locked; \
-    fi
+    cargo fetch --locked
 # Object-store backends, as in the release binaries; pass --build-arg FEATURES= for local disk only.
 ARG FEATURES=s3,gcs,azure
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
