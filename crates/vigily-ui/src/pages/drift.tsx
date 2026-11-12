@@ -108,12 +108,15 @@ export function DriftPage() {
                       <span className="mt-0.5 block text-faint">{[s.experiment, s.dataset && `on ${s.dataset}`, `${s.runs} ${s.runs === 1 ? "run" : "runs"}`].filter(Boolean).join(", ")}</span>
                     </th>
                     <td className="border-b px-3 py-3 font-mono text-[13px] nums">
-                      {s.latest &&
+                      {s.latest && Object.keys(s.latest.scores).length ? (
                         Object.entries(s.latest.scores).map(([k, v]) => (
                           <span key={k} className="block">
                             <span className="text-faint">{k}</span> {num(v)}
                           </span>
-                        ))}
+                        ))
+                      ) : (
+                        <span className="font-sans text-faint">No scores</span>
+                      )}
                     </td>
                     <td className="border-b px-3 py-3">
                       {s.behaviour.length ? (
@@ -125,7 +128,7 @@ export function DriftPage() {
                           </span>
                         ))
                       ) : (
-                        <span className="text-faint">Needs a second run</span>
+                        <span className="text-faint">{s.scores.length === 0 ? "No scores to compare" : "Needs a second run"}</span>
                       )}
                     </td>
                     <td className="border-b px-3 py-3">
@@ -145,6 +148,19 @@ export function DriftPage() {
           </table>
         </div>
       )}
+    </div>
+  );
+}
+
+/** A suite whose runs recorded no scores: drift has nothing to chart, and says why instead of loading forever. */
+function NoScores({ runs }: { runs: number }) {
+  return (
+    <div className="max-w-prose border-y py-6 text-muted-foreground">
+      <p className="text-foreground">{runs === 1 ? "This eval run recorded no scores." : `These ${runs} eval runs recorded no scores.`}</p>
+      <p className="mt-2">
+        Drift compares the per-item scores that <code className="font-mono">evaluate()</code> records as <code className="font-mono">eval/&lt;score&gt;</code> metrics. Metrics logged with{" "}
+        <code className="font-mono">run.track()</code> alone appear in the runs table and charts, but are not compared here.
+      </p>
     </div>
   );
 }
@@ -345,7 +361,7 @@ export function SuitePage() {
               ? `Pinned to ${d.baseline.runs.length} ${d.baseline.runs.length === 1 ? "run" : "runs"}. The band is its mean ± 2 standard deviations.`
               : `The last ${d?.baseline.window ?? 7} runs before each run that did not drift. The band is their mean ± 2 standard deviations.`}
           </MarginNote>
-          <MarginNote title="Reading the chart">Red squares are runs that drifted. Click a run, or focus the chart and use the arrow keys, to inspect it.</MarginNote>
+          {(!d || d.scores.length > 0) && <MarginNote title="Reading the chart">Red squares are runs that drifted. Click a run, or focus the chart and use the arrow keys, to inspect it.</MarginNote>}
         </div>
         <figure className="min-w-0 pt-5">
           {d && score ? (
@@ -375,12 +391,16 @@ export function SuitePage() {
             ) : (
               <p className="py-10 text-muted-foreground">No runs with this score yet.</p>
             )
+          ) : d ? (
+            <NoScores runs={d.runs.length} />
           ) : (
             <Skeleton className="h-[300px]" />
           )}
-          <Caption n={1} right={sel ? `${dateTime(sel.created_at)}: ${num(sel.value)}, baseline ${num(sel.baseline_mean)}` : undefined}>
-            {score} on each run of the suite{points.length ? `, ${points.length} runs` : ""}.
-          </Caption>
+          {(!d || score) && (
+            <Caption n={1} right={sel ? `${dateTime(sel.created_at)}: ${num(sel.value)}, baseline ${num(sel.baseline_mean)}` : undefined}>
+              {score ? <span className="font-mono">{score}</span> : "The score"} on each run of the suite{points.length ? `, ${points.length} runs` : ""}.
+            </Caption>
+          )}
         </figure>
       </div>
 
