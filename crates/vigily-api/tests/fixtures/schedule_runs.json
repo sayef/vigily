@@ -1,0 +1,36 @@
+{
+  "runs": [
+    {
+      "id": "00001794498290937122-1-e3fd07a6",
+      "schedule": "nightly-intents",
+      "scheduled_for": 1794498290937120,
+      "started_at": 1794498290937122,
+      "ended_at": 1794498293414560,
+      "attempt": 1,
+      "status": "succeeded",
+      "exit_code": 0,
+      "reason": null,
+      "has_output": true,
+      "eval_runs": [
+        {
+          "id": "01a1d06ee65e74ff9dbfb3ebd206d2fe",
+          "name": "intent-clf-v2 2026-11-12 15:44",
+          "status": "finished",
+          "target": {
+            "model": "intent-clf-v2",
+            "endpoint": "https://models.example.com/intent-clf-v2"
+          }
+        },
+        {
+          "id": "01a1d06ee5c1732fb3d654b9a0808e5b",
+          "name": "intent-clf-v1 2026-11-12 15:44",
+          "status": "finished",
+          "target": {
+            "model": "intent-clf-v1",
+            "endpoint": "https://models.example.com/intent-clf-v1"
+          }
+        }
+      ]
+    }
+  ]
+}

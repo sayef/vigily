@@ -10,7 +10,6 @@ use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
 use parking_lot::RwLock;
-use serde::Serialize;
 use serde_json::Value;
 
 use crate::error::Result;
@@ -18,14 +17,7 @@ use crate::model::{flatten, Agg, Micros, Run, RunStatus, Series, Summary};
 use crate::query::{resolve, Field, Query, RunView, Val};
 use crate::store::{now_micros, Store};
 
-/// One series and its statistics.
-#[derive(Clone, Debug, Serialize)]
-pub struct SeriesEntry {
-    #[serde(flatten)]
-    pub series: Series,
-    pub key: String,
-    pub summary: Summary,
-}
+pub use vigily_api::catalog::{ExperimentInfo, MetricInfo, ParamInfo, SeriesEntry};
 
 /// One run with everything the runs table needs.
 #[derive(Clone, Debug)]
@@ -169,14 +161,14 @@ impl Snapshot {
             for (k, v) in &e.flat {
                 let p = map.entry(k.clone()).or_insert_with(|| ParamInfo {
                     key: k.clone(),
-                    kind: kind_of(v),
+                    kind: kind_of(v).to_string(),
                     runs: 0,
                     distinct: 0,
                     values: Vec::new(),
                 });
                 p.runs += 1;
                 if p.kind != kind_of(v) {
-                    p.kind = "mixed";
+                    p.kind = "mixed".into();
                 }
                 if p.values.len() <= 64 && !p.values.contains(v) {
                     p.values.push(v.clone());
@@ -366,43 +358,6 @@ impl Column {
                 .map_or(Val::Null, Val::Num),
         }
     }
-}
-
-#[derive(Clone, Debug, Default, Serialize)]
-pub struct ExperimentInfo {
-    /// Empty for runs without an experiment.
-    pub name: String,
-    pub runs: usize,
-    pub running: usize,
-    pub finished: usize,
-    pub failed: usize,
-    pub aborted: usize,
-    pub archived: usize,
-    pub first_created: Option<Micros>,
-    pub last_created: Option<Micros>,
-    pub metrics: Vec<String>,
-}
-
-#[derive(Clone, Debug, Serialize)]
-pub struct MetricInfo {
-    pub key: String,
-    pub name: String,
-    pub context: Value,
-    pub runs: usize,
-    /// How many of those runs are eval runs.
-    pub eval_runs: usize,
-}
-
-#[derive(Clone, Debug, Serialize)]
-pub struct ParamInfo {
-    pub key: String,
-    /// number, text, bool, list, null or mixed.
-    pub kind: &'static str,
-    pub runs: usize,
-    /// Distinct values (counted up to 65).
-    pub distinct: usize,
-    /// The distinct values when there are at most 64, for grouping and autocompletion.
-    pub values: Vec<Value>,
 }
 
 /// The catalog over a store.

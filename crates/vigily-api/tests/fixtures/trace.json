@@ -1,0 +1,78 @@
+{
+  "trace": {
+    "id": "47fba86e2f647adb2c95b77d9fed05b7",
+    "name": "answer_question",
+    "root": "dd35b3488732d955",
+    "run_id": "01a1d06dd2d1762eb65996f5dcee25fa",
+    "eval_item": null,
+    "project": "support-bot",
+    "start_time": 1794494838851067,
+    "end_time": 1794494839887502,
+    "status": "ok",
+    "spans": 4,
+    "errors": 0,
+    "llm_calls": 2,
+    "input_tokens": 2398,
+    "output_tokens": 364,
+    "cached_tokens": 0,
+    "cost": 0.00057576,
+    "unpriced": 0,
+    "currency": "EUR",
+    "models": [
+      "example-embed",
+      "example-small"
+    ],
+    "payloads": "truncated",
+    "chunks": 1,
+    "run_name": "assistant-traces",
+    "duration_us": 1036435
+  },
+  "spans": [
+    {
+      "span_id": "dd35b3488732d955",
+      "parent_id": null,
+      "name": "answer_question",
+      "kind": "chain",
+      "start_time": 1794494838851067,
+      "end_time": 1794494839887502,
+      "status": "ok",
+      "error": null,
+      "attributes": {},
+      "model": null,
+      "provider": null,
+      "input": "How do I reset my password?",
+      "output": "Synthetic answer.",
+      "usage": null,
+      "cost": null,
+      "payloads": "truncated"
+    },
+    {
+      "span_id": "300c8e1e433eb19a",
+      "parent_id": "dd35b3488732d955",
+      "name": "search_docs",
+      "kind": "retrieval",
+      "start_time": 1794494838853067,
+      "end_time": 1794494838956642,
+      "status": "ok",
+      "error": null,
+      "attributes": {
+        "index": "help-center",
+        "hits": 4
+      },
+      "model": null,
+      "provider": null,
+      "input": {
+        "query": "How do I reset my password?",
+        "top_k": 4
+      },
+      "output": [
+        "doc-146",
+        "doc-482"
+      ],
+      "usage": null,
+      "cost": null,
+      "payloads": "truncated"
+    }
+  ],
+  "max_field_bytes": 4096
+}

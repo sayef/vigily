@@ -1,0 +1,67 @@
+{
+  "config_path": "examples/vigily.toml",
+  "schedules": [
+    {
+      "name": "nightly-intents",
+      "description": "Score both intent classifiers on the latest support-intents dataset",
+      "cron": "0 2 * * *",
+      "timezone": "Europe/Berlin",
+      "command": [
+        "uv",
+        "run"
+      ],
+      "workdir": "/srv/project",
+      "timeout": "15m",
+      "retries": 1,
+      "missed": "run_once",
+      "enabled": true,
+      "next_run": 1794531600000000,
+      "last_run": {
+        "id": "00001794498290937122-1-e3fd07a6",
+        "schedule": "nightly-intents",
+        "scheduled_for": 1794498290937120,
+        "started_at": 1794498290937122,
+        "ended_at": 1794498293414560,
+        "attempt": 1,
+        "status": "succeeded",
+        "exit_code": 0,
+        "reason": null,
+        "has_output": true
+      },
+      "recent": [
+        {
+          "id": "00001794498290937122-1-e3fd07a6",
+          "schedule": "nightly-intents",
+          "scheduled_for": 1794498290937120,
+          "started_at": 1794498290937122,
+          "ended_at": 1794498293414560,
+          "attempt": 1,
+          "status": "succeeded",
+          "exit_code": 0,
+          "reason": null,
+          "has_output": true
+        }
+      ],
+      "runs": 1
+    },
+    {
+      "name": "weekly-judge",
+      "description": "Grade answer quality with an LLM judge (needs JUDGE_ENDPOINT)",
+      "cron": "30 3 * * 1",
+      "timezone": "Europe/Berlin",
+      "command": [
+        "uv",
+        "run"
+      ],
+      "workdir": "/srv/project",
+      "timeout": "1h",
+      "retries": 1,
+      "missed": "skip",
+      "enabled": true,
+      "next_run": 1794796200000000,
+      "last_run": null,
+      "recent": [],
+      "runs": 0
+    }
+  ]
+}

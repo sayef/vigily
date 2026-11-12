@@ -1,0 +1,19 @@
+[package]
+name = "vigily-api"
+description = "vigily's HTTP API: the requests and answers the engine, the web app, the CLI and the SDK share"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+
+[features]
+# The typed HTTP client for `/api/v1`. Reserved: it arrives with the engine/client split and adds
+# its HTTP dependencies then.
+client = []
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true

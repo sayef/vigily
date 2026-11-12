@@ -12,6 +12,8 @@ use crate::model::{
     NewRun, Points, Run, RunPatch, RunStatus, Series, StepRange, Summary, TimeRange, TrackOpts,
 };
 
+pub use vigily_api::runs::PurgeSummary;
+
 /// A repository of runs.
 #[async_trait]
 pub trait Store: Send + Sync + 'static {
@@ -155,21 +157,6 @@ pub trait RunWriter: Send + Sync {
 /// A running run with no sign of life (heartbeat, metadata write or point) for this long is shown
 /// as stale: its process most likely died. Microseconds.
 pub const STALE_AFTER: i64 = 10 * 60 * 1_000_000;
-
-/// What [`Store::purge`] removed.
-#[derive(Clone, Debug, Default, PartialEq, serde::Serialize)]
-pub struct PurgeSummary {
-    /// Deleted runs whose data was erased.
-    pub runs: usize,
-    /// Data files rewritten without deleted rows.
-    pub fragments_rewritten: usize,
-    /// Older versions removed.
-    pub versions_removed: u64,
-    /// Bytes of files removed.
-    pub bytes_removed: u64,
-    /// Tags deleted because they kept erased data (only with `force`).
-    pub tags_deleted: Vec<String>,
-}
 
 /// The current time in microseconds since the Unix epoch.
 pub fn now_micros() -> i64 {

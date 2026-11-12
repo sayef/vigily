@@ -1,0 +1,99 @@
+{
+  "info": {
+    "name": "support-intents",
+    "description": "Support messages labelled with one of five intents, in English, German and French",
+    "created_at": 1794498282836775,
+    "updated_at": 1794498285420086,
+    "latest": 2,
+    "items": 243
+  },
+  "version": {
+    "version": 2,
+    "created_at": 1794498285420086,
+    "note": "More billing phrasings after a support escalation",
+    "digest": "f4b8086ac1a4b447",
+    "changes": {
+      "added": 18,
+      "updated": 0,
+      "removed": 0
+    },
+    "source": "sdk",
+    "storage_version": 4,
+    "items": 243
+  },
+  "versions": [
+    {
+      "version": 2,
+      "created_at": 1794498285420086,
+      "note": "More billing phrasings after a support escalation",
+      "digest": "f4b8086ac1a4b447",
+      "changes": {
+        "added": 18,
+        "updated": 0,
+        "removed": 0
+      },
+      "source": "sdk",
+      "storage_version": 4,
+      "items": 243
+    },
+    {
+      "version": 1,
+      "created_at": 1794498282836775,
+      "note": "Initial labelled set",
+      "digest": "3ed39985f7feba54",
+      "changes": {
+        "added": 225,
+        "updated": 0,
+        "removed": 0
+      },
+      "source": "sdk",
+      "storage_version": 2,
+      "items": 225
+    }
+  ],
+  "total": 243,
+  "items": [
+    {
+      "id": "ship-en-0-0",
+      "hash": "9d2fe2622899a090",
+      "input": "Where is my parcel 1000?",
+      "expected": "shipping",
+      "metadata": {
+        "lang": "en",
+        "intent": "shipping"
+      }
+    },
+    {
+      "id": "ship-en-0-1",
+      "hash": "252bf4eeaf9d06fe",
+      "input": "Where is my parcel 1037?",
+      "expected": "shipping",
+      "metadata": {
+        "lang": "en",
+        "intent": "shipping"
+      }
+    }
+  ],
+  "runs": [
+    {
+      "id": "01a1d06ee65e74ff9dbfb3ebd206d2fe",
+      "name": "intent-clf-v2 2026-11-12 15:44",
+      "created_at": 1794498291294850,
+      "version": 2,
+      "target": {
+        "model": "intent-clf-v2",
+        "endpoint": "https://models.example.com/intent-clf-v2"
+      }
+    },
+    {
+      "id": "01a1d06ee5c1732fb3d654b9a0808e5b",
+      "name": "intent-clf-v1 2026-11-12 15:44",
+      "created_at": 1794498291137025,
+      "version": 2,
+      "target": {
+        "model": "intent-clf-v1",
+        "endpoint": "https://models.example.com/intent-clf-v1"
+      }
+    }
+  ]
+}

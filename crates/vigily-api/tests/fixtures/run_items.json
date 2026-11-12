@@ -1,0 +1,65 @@
+{
+  "run_id": "01a1d06dd11173f1a444d7030613d052",
+  "dataset": {
+    "digest": "258d1c2887b0e6c6",
+    "items": 192,
+    "name": "sst2-test",
+    "version": 1
+  },
+  "total": 192,
+  "failed": 19,
+  "errors": 0,
+  "scores": {
+    "exact_match": {
+      "mean": 0.9010416666666666,
+      "pass_rate": 0.9010416666666666,
+      "n": 192
+    }
+  },
+  "items": [
+    {
+      "item_id": "0138ca184b8e",
+      "input": "The script earns every minute from start to finish.",
+      "expected": "positive",
+      "metadata": {},
+      "output": "positive",
+      "error": null,
+      "latency_ms": 0.03216182813048363,
+      "scores": [
+        {
+          "name": "exact_match",
+          "value": 1.0,
+          "passed": true,
+          "reason": null,
+          "evaluator": "exact_match",
+          "evaluator_version": "vigily/exact_match@1"
+        }
+      ],
+      "labels": [],
+      "failed": false,
+      "trace_id": null
+    },
+    {
+      "item_id": "02a95855d5e8",
+      "input": "The ending is sharp and funny from start to finish.",
+      "expected": "positive",
+      "metadata": {},
+      "output": "positive",
+      "error": null,
+      "latency_ms": 0.033076852560043335,
+      "scores": [
+        {
+          "name": "exact_match",
+          "value": 1.0,
+          "passed": true,
+          "reason": null,
+          "evaluator": "exact_match",
+          "evaluator_version": "vigily/exact_match@1"
+        }
+      ],
+      "labels": [],
+      "failed": false,
+      "trace_id": null
+    }
+  ]
+}

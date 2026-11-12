@@ -16,9 +16,12 @@ use axum::extract::{DefaultBodyLimit, Path, Query as QueryParams, State};
 use axum::http::{header, HeaderMap, StatusCode};
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::Value;
-use vigily_core::traces::{self, IngestReport, PayloadMode, Span, SpanIn, TraceSummary};
+use vigily_api::traces::{
+    IngestBody, RunRef, Totals, TraceDeleted, TraceResponse, TraceRow, TracesResponse,
+};
+use vigily_core::traces::{self, IngestReport, SpanIn, TraceSummary};
 
 use crate::{ApiError, AppState};
 
@@ -43,11 +46,6 @@ pub fn routes() -> Router<Arc<AppState>> {
 
 fn bad(m: impl Into<String>) -> ApiError {
     ApiError::new(StatusCode::BAD_REQUEST, m)
-}
-
-#[derive(Deserialize)]
-struct IngestBody {
-    spans: Vec<SpanIn>,
 }
 
 async fn store(s: &AppState, spans: Vec<SpanIn>) -> Result<IngestReport, ApiError> {
@@ -185,49 +183,6 @@ fn default_limit() -> usize {
     200
 }
 
-#[derive(Serialize)]
-pub(crate) struct TraceRow {
-    #[serde(flatten)]
-    summary: TraceSummary,
-    run_name: Option<String>,
-    duration_us: i64,
-}
-
-#[derive(Serialize)]
-struct Totals {
-    traces: usize,
-    errors: usize,
-    input_tokens: u64,
-    output_tokens: u64,
-    cached_tokens: u64,
-    /// Cost per currency (a changed currency setting leaves older traces in the old one).
-    cost: std::collections::BTreeMap<String, f64>,
-    unpriced: u32,
-    /// Median and 95th-percentile duration in microseconds.
-    p50_us: Option<i64>,
-    p95_us: Option<i64>,
-}
-
-#[derive(Serialize)]
-struct RunRef {
-    id: String,
-    name: String,
-}
-
-#[derive(Serialize)]
-struct ListResponse {
-    total: usize,
-    rows: Vec<TraceRow>,
-    totals: Totals,
-    /// Filter choices over all traces.
-    models: Vec<String>,
-    runs: Vec<RunRef>,
-    /// The payload policy for new traces (global; projects may override it).
-    payloads: PayloadMode,
-    max_field_bytes: usize,
-    currency: String,
-}
-
 fn run_name(snap: &vigily_core::Snapshot, id: Option<&str>) -> Option<String> {
     id.and_then(|i| snap.get(i)).map(|e| e.run.display_name())
 }
@@ -235,7 +190,7 @@ fn run_name(snap: &vigily_core::Snapshot, id: Option<&str>) -> Option<String> {
 async fn list(
     State(s): State<Arc<AppState>>,
     QueryParams(p): QueryParams<ListParams>,
-) -> ApiResult<ListResponse> {
+) -> ApiResult<TracesResponse> {
     let all = summaries(&s).await?;
     let snap = s.catalog.snapshot();
     let q = p.q.to_lowercase();
@@ -301,7 +256,7 @@ async fn list(
             name: run_name(&snap, Some(id)).unwrap_or_else(|| id.chars().take(8).collect()),
         })
         .collect();
-    Ok(Json(ListResponse {
+    Ok(Json(TracesResponse {
         total: matching.len(),
         rows,
         totals,
@@ -311,14 +266,6 @@ async fn list(
         max_field_bytes: s.config.tracing.max_field_bytes,
         currency: s.config.tracing.currency.clone(),
     }))
-}
-
-#[derive(Serialize)]
-struct TraceResponse {
-    trace: TraceRow,
-    spans: Vec<Span>,
-    /// The field limit of the trace's payload policy now (for "truncated to N KiB").
-    max_field_bytes: usize,
 }
 
 async fn one(State(s): State<Arc<AppState>>, Path(id): Path<String>) -> ApiResult<TraceResponse> {
@@ -344,12 +291,7 @@ async fn one(State(s): State<Arc<AppState>>, Path(id): Path<String>) -> ApiResul
     }))
 }
 
-#[derive(Serialize)]
-struct Deleted {
-    deleted: bool,
-}
-
-async fn delete(State(s): State<Arc<AppState>>, Path(id): Path<String>) -> ApiResult<Deleted> {
+async fn delete(State(s): State<Arc<AppState>>, Path(id): Path<String>) -> ApiResult<TraceDeleted> {
     let deleted = {
         let _one_at_a_time = s.ingest_lock.lock().await;
         traces::delete(&*s.records, &id).await?
@@ -362,5 +304,5 @@ async fn delete(State(s): State<Arc<AppState>>, Path(id): Path<String>) -> ApiRe
     }
     *s.traces_cache.lock() = None;
     *s.traces_count.lock() = None;
-    Ok(Json(Deleted { deleted }))
+    Ok(Json(TraceDeleted { deleted }))
 }

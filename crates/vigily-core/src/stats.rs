@@ -14,6 +14,8 @@
 
 use std::collections::BTreeMap;
 
+pub use vigily_api::drift::{ChiSquared, Ks};
+
 /// The complementary error function, |relative error| < 1.2e-7 (Numerical Recipes `erfcc`).
 pub fn erfc(x: f64) -> f64 {
     let z = x.abs();
@@ -270,15 +272,6 @@ pub fn psi_of_shares(b: &[f64], c: &[f64]) -> f64 {
         .sum()
 }
 
-/// The result of a two-sample Kolmogorov–Smirnov test.
-#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize)]
-pub struct Ks {
-    /// The largest gap between the two empirical distribution functions.
-    pub d: f64,
-    /// Asymptotic p-value.
-    pub p: f64,
-}
-
 /// The Kolmogorov distribution's survival function Q(λ) (Numerical Recipes `probks`).
 fn probks(lambda: f64) -> f64 {
     let a2 = -2.0 * lambda * lambda;
@@ -389,14 +382,6 @@ pub fn gamma_q(a: f64, x: f64) -> f64 {
         }
         (-x + a * x.ln() - ln_gamma(a)).exp() * h
     }
-}
-
-/// The result of a chi-squared test.
-#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize)]
-pub struct ChiSquared {
-    pub statistic: f64,
-    pub df: f64,
-    pub p: f64,
 }
 
 /// Chi-squared test of homogeneity of two category count tables.

@@ -41,6 +41,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
+pub use vigily_api::evals::MissedPolicy;
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -59,16 +60,6 @@ pub struct Config {
     /// Where the configuration was read from, for display.
     #[serde(skip)]
     pub path: Option<PathBuf>,
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum MissedPolicy {
-    /// Record that fires were missed and wait for the next one.
-    #[default]
-    Skip,
-    /// Run once for the latest missed fire.
-    RunOnce,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

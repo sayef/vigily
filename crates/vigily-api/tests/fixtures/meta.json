@@ -1,0 +1,86 @@
+{
+  "version": "0.1.0-beta.1",
+  "repository": "/srv/project/.vigily",
+  "runs": 106,
+  "running": 2,
+  "archived": 0,
+  "kinds": {
+    "eval": 65,
+    "training": 41
+  },
+  "datasets": 2,
+  "schedules": 2,
+  "open_alerts": 3,
+  "traces": 48,
+  "refreshed_at": 1794498321623807,
+  "experiments": [
+    {
+      "name": "support-intents-nightly",
+      "runs": 62,
+      "running": 0,
+      "finished": 62,
+      "failed": 0,
+      "aborted": 0,
+      "archived": 0,
+      "first_created": 1791936000000000,
+      "last_created": 1794498291294850,
+      "metrics": [
+        "errors",
+        "eval/exact_match"
+      ]
+    },
+    {
+      "name": "gpt-small-pretrain",
+      "runs": 7,
+      "running": 2,
+      "finished": 4,
+      "failed": 1,
+      "aborted": 0,
+      "archived": 0,
+      "first_created": 1794109416863341,
+      "last_created": 1794495696863341,
+      "metrics": [
+        "__system__/cpu_percent",
+        "__system__/gpu_memory_gb"
+      ]
+    }
+  ],
+  "metrics": [
+    {
+      "key": "__system__/cpu_percent",
+      "name": "__system__/cpu_percent",
+      "context": {},
+      "runs": 23,
+      "eval_runs": 0
+    },
+    {
+      "key": "__system__/gpu_memory_gb",
+      "name": "__system__/gpu_memory_gb",
+      "context": {},
+      "runs": 23,
+      "eval_runs": 0
+    }
+  ],
+  "params": [
+    {
+      "key": "__eval__.dataset.digest",
+      "kind": "text",
+      "runs": 65,
+      "distinct": 3,
+      "values": [
+        "f4b8086ac1a4b447",
+        "258d1c2887b0e6c6"
+      ]
+    },
+    {
+      "key": "__eval__.dataset.items",
+      "kind": "number",
+      "runs": 65,
+      "distinct": 3,
+      "values": [
+        243,
+        192
+      ]
+    }
+  ]
+}

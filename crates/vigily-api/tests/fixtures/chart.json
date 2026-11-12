@@ -1,0 +1,45 @@
+{
+  "metric": "accuracy[val]",
+  "x_axis": "step",
+  "x": [
+    525.0,
+    1050.0
+  ],
+  "exact": true,
+  "domain": [
+    525.0,
+    6300.0
+  ],
+  "series": [
+    {
+      "run_id": "01a1d06dce6072f6a34e307851edbac7",
+      "name": "bert-lr1e-05-seed1",
+      "group": null,
+      "y": [
+        0.7728459120361142,
+        0.8358757231031411
+      ],
+      "last": [
+        6300.0,
+        0.9112227092570075
+      ]
+    },
+    {
+      "run_id": "01a1d06dce9172caae4e376d6ea3743a",
+      "name": "bert-lr1e-05-seed2",
+      "group": null,
+      "y": [
+        0.7760636250001841,
+        0.8370287507482771
+      ],
+      "last": [
+        6300.0,
+        0.916315609139544
+      ]
+    }
+  ],
+  "groups": [],
+  "missing": [
+    "nope"
+  ]
+}
