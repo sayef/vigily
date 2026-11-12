@@ -95,3 +95,9 @@ pub struct CreatedToken {
 pub struct Revoked {
     pub revoked: bool,
 }
+
+/// `POST auth/local-token/rotate`: the local engine's new token.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct RotatedToken {
+    pub token: String,
+}

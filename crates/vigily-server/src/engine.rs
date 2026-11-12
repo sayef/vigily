@@ -344,6 +344,7 @@ pub async fn run(opts: Options) -> Result<ExitCode> {
     };
     let canonical = local::canonical_location(&opts.repo);
     let (host, port) = (opts.host, opts.port);
+    let st = state.clone();
     serve(state, serve_opts, |ready| {
         let file = EngineFile {
             url: ready.url.clone(),
@@ -359,6 +360,7 @@ pub async fn run(opts: Options) -> Result<ExitCode> {
         written = write_engine_file(&paths.json, &file);
         if written.is_ok() {
             guard = Some(EngineFileGuard(paths.json.clone()));
+            *st.engine_file.write() = Some(paths.json.clone());
         }
         let hint = if idle_timeout.is_some() {
             "stops when idle"

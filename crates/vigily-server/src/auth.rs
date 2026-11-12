@@ -31,7 +31,9 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get, post};
 use axum::{Extension, Json, Router};
 use parking_lot::{Mutex, RwLock};
-use vigily_api::auth::{CreateToken, CreatedToken, Me, Revoked, Scope, SessionRequest, Tokens};
+use vigily_api::auth::{
+    CreateToken, CreatedToken, Me, Revoked, RotatedToken, Scope, SessionRequest, Tokens,
+};
 use vigily_core::tokens::{self, TokenRecord};
 use vigily_core::{now_micros, RecordStore};
 
@@ -560,8 +562,61 @@ pub fn routes() -> Scoped {
         .admin(
             Router::new()
                 .route("/auth/tokens", get(list_tokens).post(create_token))
-                .route("/auth/tokens/{id}", delete(revoke_token)),
+                .route("/auth/tokens/{id}", delete(revoke_token))
+                .route("/auth/local-token/rotate", post(rotate_local_token)),
         )
+}
+
+/// Replaces the local token: a new secret in the token file and the engine file, at once in
+/// effect. Links, cookies and scripts with the old one stop working.
+async fn rotate_local_token(
+    State(s): State<Arc<AppState>>,
+    Extension(ctx): Extension<AuthContext>,
+    headers: HeaderMap,
+    bytes: Bytes,
+) -> Result<Json<RotatedToken>, ApiError> {
+    crate::from_a_client_as(&headers, "token rotations", &["application/json", ""])?;
+    let _: Option<serde_json::Value> = crate::admin_api::body(&bytes)?;
+    if !matches!(s.auth.mode(), AuthMode::Local { .. }) {
+        return Err(ApiError::new(
+            StatusCode::CONFLICT,
+            "only an engine in local mode has a local token; in server mode, revoke and create access tokens",
+        ));
+    }
+    let token = new_secret();
+    let file = s.local_token_file.read().clone();
+    if let Some(file) = &file {
+        let mut o = std::fs::OpenOptions::new();
+        o.write(true).create(true).truncate(true);
+        #[cfg(unix)]
+        std::os::unix::fs::OpenOptionsExt::mode(&mut o, 0o600);
+        o.open(file)
+            .and_then(|mut f| std::io::Write::write_all(&mut f, format!("{token}\n").as_bytes()))
+            .map_err(|e| {
+                ApiError::new(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("could not write the local token to {}: {e}", file.display()),
+                )
+            })?;
+    }
+    s.auth.set_mode(AuthMode::Local {
+        token: token.clone(),
+    });
+    let engine_file = s.engine_file.read().clone();
+    if let Some(path) = engine_file {
+        let updated = std::fs::read_to_string(&path)
+            .ok()
+            .and_then(|t| serde_json::from_str::<vigily_api::local::EngineFile>(&t).ok())
+            .map(|mut f| {
+                f.token = Some(token.clone());
+                crate::engine::write_engine_file(&path, &f)
+            });
+        if let Some(Err(e)) = updated {
+            tracing::warn!(file = %path.display(), error = %e, "could not update the engine file");
+        }
+    }
+    tracing::info!(by = %ctx.principal, "local token rotated");
+    Ok(Json(RotatedToken { token }))
 }
 
 fn me_of(s: &AppState, ctx: Option<&AuthContext>) -> Me {
