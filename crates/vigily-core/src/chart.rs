@@ -10,22 +10,9 @@
 //!   occurred. With buckets about one pixel wide this draws the same picture as the raw data,
 //!   spikes and divergence included, which LTTB and averaging do not guarantee.
 
-use serde::{Deserialize, Serialize};
-
 use crate::model::{Micros, Points};
 
-/// The quantity on a chart's x axis.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum XAxis {
-    #[default]
-    Step,
-    Epoch,
-    /// Seconds since the run was created.
-    Relative,
-    /// Seconds since the Unix epoch.
-    Wall,
-}
+pub use vigily_api::chart::{Aligned, Band, XAxis};
 
 /// The x value of each point, or `None` when the point has none (an epoch was not logged).
 pub fn x_values(p: &Points, axis: XAxis, run_created: Micros) -> Vec<Option<f64>> {
@@ -73,15 +60,6 @@ impl Xy {
     fn bounds(&self) -> Option<(f64, f64)> {
         Some((*self.x.first()?, *self.x.last()?))
     }
-}
-
-/// Series on one shared x array; `None` is a gap.
-#[derive(Clone, Debug, Default, PartialEq, Serialize)]
-pub struct Aligned {
-    pub x: Vec<f64>,
-    pub ys: Vec<Vec<Option<f64>>>,
-    /// True when no point was dropped.
-    pub exact: bool,
 }
 
 fn finite(v: f64) -> Option<f64> {
@@ -208,16 +186,6 @@ pub fn align(series: &[Xy], range: Option<(f64, f64)>, buckets: usize) -> Aligne
         ys,
         exact: false,
     }
-}
-
-/// The mean, minimum and maximum of a group of series on a shared x array, with the number of
-/// series that contribute at each x.
-#[derive(Clone, Debug, Default, PartialEq, Serialize)]
-pub struct Band {
-    pub mean: Vec<Option<f64>>,
-    pub min: Vec<Option<f64>>,
-    pub max: Vec<Option<f64>>,
-    pub n: Vec<u32>,
 }
 
 /// Linear interpolation over the empty slots between the first and last filled one.

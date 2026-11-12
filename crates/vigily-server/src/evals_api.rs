@@ -10,12 +10,16 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post, put};
 use axum::{Json, Router};
 use chrono::{TimeZone, Utc};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::{json, Value};
-use vigily_core::drift::{self, DriftConfig, Suite};
-use vigily_core::evals::{
-    self, Alert, Baseline, DatasetVersion, EvalResult, Item, Label, ScheduleRun,
+use vigily_api::evals::{
+    AlertChange, CompareResponse, CompareRow, CompareRun, DataDriftResponse, DatasetResponse,
+    DatasetRun, DriftDetail, HistoryPoint, ItemRow, ItemsResponse, LinkedRun, NewLabel, Schedule,
+    ScheduleRunDetail, ScheduleRunListed, ScheduleRunSummary, ScheduleRunsResponse,
+    SchedulesResponse, ScoreSummary, Side, SuiteDetail, SuiteSummary, Thresholds, Verdict,
 };
+use vigily_core::drift::{self, DriftConfig, Suite};
+use vigily_core::evals::{self, Alert, Baseline, EvalResult, Item, Label, ScheduleRun};
 use vigily_core::{now_micros, stats, RunEntry, RunStatus};
 
 use crate::{ApiError, AppState};
@@ -154,33 +158,6 @@ async fn list_datasets(State(s): State<Arc<AppState>>) -> ApiResult<Vec<evals::D
     Ok(Json(v))
 }
 
-#[derive(Serialize)]
-struct VersionSummary {
-    version: u32,
-    created_at: i64,
-    note: Option<String>,
-    digest: String,
-    changes: evals::Changes,
-    source: Option<String>,
-    storage_version: Option<u64>,
-    items: usize,
-}
-
-impl From<&DatasetVersion> for VersionSummary {
-    fn from(v: &DatasetVersion) -> Self {
-        Self {
-            version: v.version,
-            created_at: v.created_at,
-            note: v.note.clone(),
-            digest: v.digest.clone(),
-            changes: v.changes.clone(),
-            source: v.source.clone(),
-            storage_version: v.storage_version,
-            items: v.items.len(),
-        }
-    }
-}
-
 #[derive(Deserialize)]
 struct DatasetParams {
     version: Option<u32>,
@@ -189,17 +166,6 @@ struct DatasetParams {
     #[serde(default)]
     offset: usize,
     limit: Option<usize>,
-}
-
-#[derive(Serialize)]
-struct DatasetResponse {
-    info: evals::DatasetInfo,
-    version: VersionSummary,
-    versions: Vec<VersionSummary>,
-    total: usize,
-    items: Vec<Item>,
-    /// Eval runs that used this dataset, newest first.
-    runs: Vec<Value>,
 }
 
 async fn dataset(
@@ -242,11 +208,12 @@ async fn dataset(
                 == Some(&name)
         })
         .take(50)
-        .map(|e| {
-            json!({
-                "id": e.run.id, "name": e.run.display_name(), "created_at": e.run.created_at,
-                "version": e.params[drift::EVAL_META]["dataset"]["version"], "target": e.target(),
-            })
+        .map(|e| DatasetRun {
+            id: e.run.id.clone(),
+            name: e.run.display_name(),
+            created_at: e.run.created_at,
+            version: e.params[drift::EVAL_META]["dataset"]["version"].clone(),
+            target: e.target(),
         })
         .collect();
     Ok(Json(DatasetResponse {
@@ -282,40 +249,6 @@ async fn items_by_hash(s: &AppState, dataset: &str) -> Result<HashMap<String, It
 
 fn failed(r: &EvalResult) -> bool {
     r.error.is_some() || r.scores.iter().any(|s| s.passed == Some(false))
-}
-
-#[derive(Serialize)]
-struct ItemRow {
-    item_id: String,
-    input: Value,
-    expected: Value,
-    metadata: Value,
-    output: Value,
-    error: Option<String>,
-    latency_ms: Option<f64>,
-    scores: Vec<evals::Score>,
-    labels: Vec<Label>,
-    failed: bool,
-    /// The trace recorded for this item, when tracing was on.
-    trace_id: Option<String>,
-}
-
-#[derive(Serialize, Default)]
-struct ScoreSummary {
-    mean: Option<f64>,
-    pass_rate: Option<f64>,
-    n: usize,
-}
-
-#[derive(Serialize)]
-struct ItemsResponse {
-    run_id: String,
-    dataset: Option<Value>,
-    total: usize,
-    failed: usize,
-    errors: usize,
-    scores: BTreeMap<String, ScoreSummary>,
-    items: Vec<ItemRow>,
 }
 
 #[derive(Deserialize)]
@@ -415,15 +348,6 @@ async fn run_items(
     }))
 }
 
-#[derive(Deserialize)]
-struct NewLabel {
-    item_id: String,
-    name: String,
-    value: Option<f64>,
-    passed: Option<bool>,
-    comment: Option<String>,
-}
-
 async fn add_label(
     State(s): State<Arc<AppState>>,
     Path(id): Path<String>,
@@ -477,29 +401,10 @@ struct CompareParams {
     b: String,
 }
 
-#[derive(Serialize)]
-struct Side {
-    output: Value,
-    error: Option<String>,
-    scores: Vec<evals::Score>,
-    failed: bool,
-}
-
-#[derive(Serialize)]
-struct CompareRow {
-    item_id: String,
-    input: Value,
-    expected: Value,
-    a: Option<Side>,
-    b: Option<Side>,
-    /// regressed, fixed, both_failed, both_passed, changed, only_a, only_b
-    change: &'static str,
-}
-
 async fn compare(
     State(s): State<Arc<AppState>>,
     QueryParams(p): QueryParams<CompareParams>,
-) -> Result<Json<Value>, ApiError> {
+) -> ApiResult<CompareResponse> {
     let (ea, eb) = (eval_entry(&s, &p.a)?, eval_entry(&s, &p.b)?);
     s.records.refresh().await?;
     let ra = evals::results(&*s.records, &p.a).await?;
@@ -521,7 +426,7 @@ async fn compare(
     };
     let mb: HashMap<&str, &EvalResult> = rb.iter().map(|r| (r.item_id.as_str(), r)).collect();
     let mut rows: Vec<CompareRow> = Vec::new();
-    let mut counts: BTreeMap<&'static str, usize> = BTreeMap::new();
+    let mut counts: BTreeMap<String, usize> = BTreeMap::new();
     let mut seen = std::collections::HashSet::new();
     for r in &ra {
         seen.insert(r.item_id.clone());
@@ -536,7 +441,7 @@ async fn compare(
                 _ => "both_passed",
             },
         };
-        *counts.entry(change).or_default() += 1;
+        *counts.entry(change.to_string()).or_default() += 1;
         let it = items.get(&r.item_hash);
         rows.push(CompareRow {
             item_id: r.item_id.clone(),
@@ -544,11 +449,11 @@ async fn compare(
             expected: it.map_or(Value::Null, |i| i.expected.clone()),
             a: Some(side(r)),
             b: other.map(|o| side(o)),
-            change,
+            change: change.to_string(),
         });
     }
     for o in rb.iter().filter(|o| !seen.contains(&o.item_id)) {
-        *counts.entry("only_b").or_default() += 1;
+        *counts.entry("only_b".to_string()).or_default() += 1;
         let it = items.get(&o.item_hash);
         rows.push(CompareRow {
             item_id: o.item_id.clone(),
@@ -556,7 +461,7 @@ async fn compare(
             expected: it.map_or(Value::Null, |i| i.expected.clone()),
             a: None,
             b: Some(side(o)),
-            change: "only_b",
+            change: "only_b".to_string(),
         });
     }
     let order = |c: &str| {
@@ -574,19 +479,27 @@ async fn compare(
         .unwrap_or(9)
     };
     rows.sort_by(|x, y| {
-        order(x.change)
-            .cmp(&order(y.change))
+        order(&x.change)
+            .cmp(&order(&y.change))
             .then(x.item_id.cmp(&y.item_id))
     });
-    let meta = |e: &RunEntry| {
-        json!({
-            "id": e.run.id, "name": e.run.display_name(), "created_at": e.run.created_at,
-            "target": e.target(), "dataset": e.params.get(drift::EVAL_META).and_then(|m| m.get("dataset")),
-        })
+    let meta = |e: &RunEntry| CompareRun {
+        id: e.run.id.clone(),
+        name: e.run.display_name(),
+        created_at: e.run.created_at,
+        target: e.target(),
+        dataset: e
+            .params
+            .get(drift::EVAL_META)
+            .and_then(|m| m.get("dataset"))
+            .cloned(),
     };
-    Ok(Json(
-        json!({ "a": meta(&ea), "b": meta(&eb), "counts": counts, "items": rows }),
-    ))
+    Ok(Json(CompareResponse {
+        a: meta(&ea),
+        b: meta(&eb),
+        counts,
+        items: rows,
+    }))
 }
 
 #[derive(Deserialize)]
@@ -701,18 +614,14 @@ async fn audit(
 // ---------------------------------------------------------------------------------------------
 // Schedules
 
-fn summary(r: &ScheduleRun, with_output: &std::collections::HashSet<String>) -> Value {
-    json!({
-        "id": r.id, "schedule": r.schedule, "scheduled_for": r.scheduled_for, "started_at": r.started_at,
-        "ended_at": r.ended_at, "attempt": r.attempt, "status": r.status, "exit_code": r.exit_code,
-        "reason": r.reason, "has_output": with_output.contains(&r.id),
-    })
+fn summary(r: &ScheduleRun, with_output: &std::collections::HashSet<String>) -> ScheduleRunSummary {
+    ScheduleRunSummary::of(r, with_output.contains(&r.id))
 }
 
 /// Eval runs a schedule run logged, by schedule-run id.
-fn linked_runs(s: &AppState, schedule: &str) -> HashMap<String, Vec<Value>> {
+fn linked_runs(s: &AppState, schedule: &str) -> HashMap<String, Vec<LinkedRun>> {
     let snap = s.catalog.snapshot();
-    let mut out: HashMap<String, Vec<Value>> = HashMap::new();
+    let mut out: HashMap<String, Vec<LinkedRun>> = HashMap::new();
     for e in &snap.runs {
         let Some(sch) = e
             .params
@@ -727,37 +636,55 @@ fn linked_runs(s: &AppState, schedule: &str) -> HashMap<String, Vec<Value>> {
         let Some(rid) = sch.get("run").and_then(Value::as_str) else {
             continue;
         };
-        out.entry(rid.to_string()).or_default().push(json!({"id": e.run.id, "name": e.run.display_name(), "status": e.run.status, "target": e.target()}));
+        out.entry(rid.to_string()).or_default().push(LinkedRun {
+            id: e.run.id.clone(),
+            name: e.run.display_name(),
+            status: e.run.status,
+            target: e.target(),
+        });
     }
     out
 }
 
-async fn schedules(State(s): State<Arc<AppState>>) -> ApiResult<Value> {
+async fn schedules(State(s): State<Arc<AppState>>) -> ApiResult<SchedulesResponse> {
     s.records.refresh().await?;
     let next = s.schedule_status.read().clone();
     let mut list = Vec::new();
     for c in &s.config.schedule {
         let runs = evals::schedule_runs(&*s.records, &c.name).await?;
         let out = evals::schedule_runs_with_output(&*s.records, &c.name).await?;
-        let recent: Vec<Value> = runs.iter().take(14).map(|r| summary(r, &out)).collect();
-        list.push(json!({
-            "name": c.name, "description": c.description, "cron": c.cron, "timezone": c.timezone,
-            "command": c.command, "workdir": std::fs::canonicalize(s.config.workdir(c)).unwrap_or_else(|_| s.config.workdir(c)),
-            "timeout": c.timeout, "retries": c.retries,
-            "missed": c.missed, "enabled": c.enabled, "next_run": next.get(&c.name),
-            "last_run": runs.first().map(|r| summary(r, &out)), "recent": recent, "runs": runs.len(),
-        }));
+        let recent = runs.iter().take(14).map(|r| summary(r, &out)).collect();
+        let workdir = std::fs::canonicalize(s.config.workdir(c))
+            .unwrap_or_else(|_| s.config.workdir(c))
+            .display()
+            .to_string();
+        list.push(Schedule {
+            name: c.name.clone(),
+            description: c.description.clone(),
+            cron: c.cron.clone(),
+            timezone: c.timezone.clone(),
+            command: c.command.clone(),
+            workdir,
+            timeout: c.timeout.clone(),
+            retries: c.retries,
+            missed: c.missed,
+            enabled: c.enabled,
+            next_run: next.get(&c.name).copied(),
+            last_run: runs.first().map(|r| summary(r, &out)),
+            recent,
+            runs: runs.len(),
+        });
     }
-    Ok(Json(json!({
-        "config_path": s.config.path.as_ref().map(|p| p.display().to_string()),
-        "schedules": list,
-    })))
+    Ok(Json(SchedulesResponse {
+        config_path: s.config.path.as_ref().map(|p| p.display().to_string()),
+        schedules: list,
+    }))
 }
 
 async fn schedule_runs(
     State(s): State<Arc<AppState>>,
     Path(name): Path<String>,
-) -> ApiResult<Value> {
+) -> ApiResult<ScheduleRunsResponse> {
     if !s.config.schedule.iter().any(|c| c.name == name) {
         return Err(not_found(format!(
             "no schedule named {name} in the configuration"
@@ -766,36 +693,33 @@ async fn schedule_runs(
     s.records.refresh().await?;
     let linked = linked_runs(&s, &name);
     let out = evals::schedule_runs_with_output(&*s.records, &name).await?;
-    let runs: Vec<Value> = evals::schedule_runs(&*s.records, &name)
+    let runs = evals::schedule_runs(&*s.records, &name)
         .await?
         .iter()
         .take(500)
-        .map(|r| {
-            let mut v = summary(r, &out);
-            v["eval_runs"] = json!(linked.get(&r.id).cloned().unwrap_or_default());
-            v
+        .map(|r| ScheduleRunListed {
+            run: summary(r, &out),
+            eval_runs: linked.get(&r.id).cloned().unwrap_or_default(),
         })
         .collect();
-    Ok(Json(json!({ "runs": runs })))
+    Ok(Json(ScheduleRunsResponse { runs }))
 }
 
 async fn schedule_run(
     State(s): State<Arc<AppState>>,
     Path((name, id)): Path<(String, String)>,
-) -> ApiResult<Value> {
+) -> ApiResult<ScheduleRunDetail> {
     s.records.refresh().await?;
-    let r: ScheduleRun = s
+    let mut r: ScheduleRun = s
         .records
         .get(&format!("sch/{name}/{id}"))
         .await?
         .and_then(|v| serde_json::from_value(v).ok())
         .ok_or_else(|| not_found(format!("no run {id} of schedule {name}")))?;
     let (stdout, stderr) = evals::schedule_run_output(&*s.records, &name, &id).await?;
-    let mut v = serde_json::to_value(&r).unwrap_or_default();
-    v["stdout"] = json!(stdout);
-    v["stderr"] = json!(stderr);
-    v["eval_runs"] = json!(linked_runs(&s, &name).remove(&r.id).unwrap_or_default());
-    Ok(Json(v))
+    (r.stdout, r.stderr) = (stdout, stderr);
+    let eval_runs = linked_runs(&s, &name).remove(&r.id).unwrap_or_default();
+    Ok(Json(ScheduleRunDetail { run: r, eval_runs }))
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -808,7 +732,7 @@ fn find_suite(s: &AppState, key: &str) -> Result<Suite, ApiError> {
         .ok_or_else(|| not_found(format!("no evaluation suite {key}")))
 }
 
-async fn suites(State(s): State<Arc<AppState>>) -> ApiResult<Vec<Value>> {
+async fn suites(State(s): State<Arc<AppState>>) -> ApiResult<Vec<SuiteSummary>> {
     s.records.refresh().await?;
     let cfg = drift_cfg(&s);
     let mut out = Vec::new();
@@ -831,7 +755,13 @@ async fn suites(State(s): State<Arc<AppState>>) -> ApiResult<Vec<Value>> {
                     .find(|(r, _)| *r == l.run_id)
                     .and_then(|(_, d)| d.as_ref());
                 if let Some(d) = found {
-                    verdicts.push(json!({"score": score, "drifted": d.drifted, "delta": d.delta, "p": d.test.map(|t| t.p), "regressions": d.regressions.len()}));
+                    verdicts.push(Verdict {
+                        score: score.clone(),
+                        drifted: d.drifted,
+                        delta: d.delta,
+                        p: d.test.as_ref().map(|t| t.p),
+                        regressions: d.regressions.len(),
+                    });
                 }
             }
             let dh = data(&s, &suite, &baseline, &fp).await?;
@@ -841,12 +771,20 @@ async fn suites(State(s): State<Arc<AppState>>) -> ApiResult<Vec<Value>> {
                 .map_or(&[], |(_, _, f)| f.as_slice());
             data_level = dd.iter().map(|f| f.level).max_by_key(|l| *l as u8);
         }
-        out.push(json!({
-            "key": suite.key, "label": crate::monitor::suite_label(&suite), "experiment": suite.experiment,
-            "target": suite.target, "dataset": suite.dataset, "schedule": suite.schedule,
-            "runs": suite.runs.len(), "scores": suite.scores,
-            "latest": latest, "baseline": baseline, "behaviour": verdicts, "data": data_level,
-        }));
+        out.push(SuiteSummary {
+            label: crate::monitor::suite_label(&suite),
+            runs: suite.runs.len(),
+            latest: latest.cloned(),
+            key: suite.key,
+            experiment: suite.experiment,
+            target: suite.target,
+            dataset: suite.dataset,
+            schedule: suite.schedule,
+            scores: suite.scores,
+            baseline,
+            behaviour: verdicts,
+            data: data_level,
+        });
     }
     Ok(Json(out))
 }
@@ -860,7 +798,7 @@ async fn suite(
     State(s): State<Arc<AppState>>,
     Path(key): Path<String>,
     QueryParams(p): QueryParams<SuiteParams>,
-) -> ApiResult<Value> {
+) -> ApiResult<SuiteDetail> {
     s.records.refresh().await?;
     let suite = find_suite(&s, &key)?;
     let baseline = evals::baseline(&*s.records, &key).await?;
@@ -874,7 +812,7 @@ async fn suite(
         .run
         .clone()
         .or_else(|| finished.last().map(|r| r.run_id.clone()));
-    let mut history: BTreeMap<String, Vec<Value>> = BTreeMap::new();
+    let mut history: BTreeMap<String, Vec<HistoryPoint>> = BTreeMap::new();
     let mut detail = Vec::new();
     let items = match suite.dataset.as_deref() {
         Some(d) => items_by_hash(&s, d).await?,
@@ -909,23 +847,24 @@ async fn suite(
                 .collect();
             let d = by_run.get(r.run_id.as_str()).copied().flatten();
             let (m, sd) = (stats::mean(&base), stats::std_dev(&base));
-            points.push(json!({
-                "run_id": r.run_id, "created_at": r.created_at, "value": r.scores.get(score),
-                "baseline_mean": (!base.is_empty()).then_some(m),
-                "baseline_low": (!base.is_empty()).then_some(m - 2.0 * sd),
-                "baseline_high": (!base.is_empty()).then_some(m + 2.0 * sd),
-                "drifted": d.is_some_and(|d| d.drifted),
-                "p": d.and_then(|d| d.test.map(|t| t.p)),
-                "regressions": d.map_or(0, |d| d.regressions.len()),
-            }));
+            points.push(HistoryPoint {
+                run_id: r.run_id.clone(),
+                created_at: r.created_at,
+                value: r.scores.get(score).copied(),
+                baseline_mean: (!base.is_empty()).then_some(m),
+                baseline_low: (!base.is_empty()).then_some(m - 2.0 * sd),
+                baseline_high: (!base.is_empty()).then_some(m + 2.0 * sd),
+                drifted: d.is_some_and(|d| d.drifted),
+                p: d.and_then(|d| d.test.as_ref().map(|t| t.p)),
+                regressions: d.map_or(0, |d| d.regressions.len()),
+            });
         }
         history.insert(score.clone(), points);
         if let Some(d) = selected
             .as_deref()
             .and_then(|run| by_run.get(run).copied().flatten())
         {
-            let mut v = serde_json::to_value(d).unwrap_or_default();
-            let inputs: Vec<Value> = d
+            let regression_inputs = d
                 .regressions
                 .iter()
                 .take(200)
@@ -936,16 +875,27 @@ async fn suite(
                         .map_or(Value::Null, |i| i.input.clone())
                 })
                 .collect();
-            v["regression_inputs"] = json!(inputs);
-            detail.push(v);
+            detail.push(DriftDetail {
+                drift: d.clone(),
+                regression_inputs,
+            });
         }
     }
-    Ok(Json(json!({
-        "key": suite.key, "label": crate::monitor::suite_label(&suite), "experiment": suite.experiment,
-        "target": suite.target, "dataset": suite.dataset, "schedule": suite.schedule,
-        "scores": suite.scores, "runs": suite.runs, "baseline": baseline,
-        "config": cfg, "history": history, "selected": selected, "drift": detail,
-    })))
+    Ok(Json(SuiteDetail {
+        label: crate::monitor::suite_label(&suite),
+        key: suite.key,
+        experiment: suite.experiment,
+        target: suite.target,
+        dataset: suite.dataset,
+        schedule: suite.schedule,
+        scores: suite.scores,
+        runs: suite.runs,
+        baseline,
+        config: cfg,
+        history,
+        selected,
+        drift: detail,
+    }))
 }
 
 async fn set_baseline(
@@ -968,7 +918,7 @@ async fn data_drift(
     State(s): State<Arc<AppState>>,
     Path(key): Path<String>,
     QueryParams(p): QueryParams<SuiteParams>,
-) -> ApiResult<Value> {
+) -> ApiResult<DataDriftResponse> {
     s.records.refresh().await?;
     let suite = find_suite(&s, &key)?;
     let baseline = evals::baseline(&*s.records, &key).await?;
@@ -991,10 +941,17 @@ async fn data_drift(
         .find(|(r, _, _)| *r == run)
         .map(|(_, b, f)| (b.clone(), f.clone()))
         .unwrap_or_default();
-    Ok(Json(json!({
-        "run_id": run, "baseline_runs": base, "features": features,
-        "thresholds": {"psi_moderate": drift::PSI_MODERATE, "psi_drift": drift::PSI_DRIFT, "js_moderate": drift::JS_MODERATE, "js_drift": drift::JS_DRIFT},
-    })))
+    Ok(Json(DataDriftResponse {
+        run_id: run,
+        baseline_runs: base,
+        features,
+        thresholds: Thresholds {
+            psi_moderate: drift::PSI_MODERATE,
+            psi_drift: drift::PSI_DRIFT,
+            js_moderate: drift::JS_MODERATE,
+            js_drift: drift::JS_DRIFT,
+        },
+    }))
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1003,11 +960,6 @@ async fn data_drift(
 async fn alerts(State(s): State<Arc<AppState>>) -> ApiResult<Vec<Alert>> {
     s.records.refresh().await?;
     Ok(Json(evals::alerts(&*s.records).await?))
-}
-
-#[derive(Deserialize)]
-struct AlertChange {
-    acknowledged: bool,
 }
 
 async fn update_alert(

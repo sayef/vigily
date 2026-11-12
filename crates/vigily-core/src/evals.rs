@@ -31,6 +31,12 @@ use crate::error::{Error, Result};
 use crate::records::RecordStore;
 use crate::store::now_micros;
 
+pub use vigily_api::evals::{
+    Alert, AlertKind, Baseline, BaselineMode, Changes, CommitMode, DatasetInfo, DatasetVersion,
+    EvalResult, FeatureSample, Item, ItemInput, ItemRef, Label, ScheduleRun, ScheduleRunStatus,
+    Score, Severity,
+};
+
 /// A short, stable content hash: the first 16 hex digits of SHA-256.
 pub fn hash_hex(bytes: &[u8]) -> String {
     let d = Sha256::digest(bytes);
@@ -79,90 +85,20 @@ fn to_value<T: Serialize>(v: &T) -> Value {
 // ---------------------------------------------------------------------------------------------
 // Datasets
 
-/// An item as given by the user.
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub struct ItemInput {
-    /// A stable id; derived from the input when absent.
-    #[serde(default)]
-    pub id: Option<String>,
-    pub input: Value,
-    #[serde(default)]
-    pub expected: Value,
-    #[serde(default)]
-    pub metadata: Value,
-}
-
-/// A stored item.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct Item {
-    pub id: String,
-    pub hash: String,
-    pub input: Value,
-    pub expected: Value,
-    pub metadata: Value,
-}
-
-impl Item {
-    fn new(i: ItemInput) -> Item {
-        let content =
-            serde_json::json!({"input": i.input, "expected": i.expected, "metadata": i.metadata});
-        let hash = hash_hex(canonical_json(&content).as_bytes());
-        let id =
-            i.id.filter(|s| !s.trim().is_empty())
-                .unwrap_or_else(|| hash_hex(canonical_json(&i.input).as_bytes())[..12].to_string());
-        Item {
-            id,
-            hash,
-            input: i.input,
-            expected: i.expected,
-            metadata: i.metadata,
-        }
+fn new_item(i: ItemInput) -> Item {
+    let content =
+        serde_json::json!({"input": i.input, "expected": i.expected, "metadata": i.metadata});
+    let hash = hash_hex(canonical_json(&content).as_bytes());
+    let id =
+        i.id.filter(|s| !s.trim().is_empty())
+            .unwrap_or_else(|| hash_hex(canonical_json(&i.input).as_bytes())[..12].to_string());
+    Item {
+        id,
+        hash,
+        input: i.input,
+        expected: i.expected,
+        metadata: i.metadata,
     }
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct ItemRef {
-    pub id: String,
-    pub hash: String,
-}
-
-/// How a new version relates to the previous one.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum CommitMode {
-    /// The given items are the whole new version.
-    #[default]
-    Replace,
-    /// The given items are added to, or replace items with the same id in, the latest version.
-    Upsert,
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-pub struct Changes {
-    pub added: usize,
-    pub updated: usize,
-    pub removed: usize,
-}
-
-/// One immutable version of a dataset.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct DatasetVersion {
-    pub name: String,
-    pub version: u32,
-    pub created_at: i64,
-    pub note: Option<String>,
-    /// Hash of the item ids and hashes, in order.
-    pub digest: String,
-    pub items: Vec<ItemRef>,
-    pub changes: Changes,
-    /// Where the items came from: `sdk`, `jsonl:<file name>`, `csv:<file name>`.
-    pub source: Option<String>,
-    /// The storage (Lance) version the commit produced, when the backend is versioned.
-    pub storage_version: Option<u64>,
-    /// The storage tag that names `storage_version`, so version cleanup keeps it and audit
-    /// records can cite exactly what was evaluated.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub storage_tag: Option<String>,
 }
 
 /// The storage tag of a dataset version: `ds-<name>-<hash>-v<version>`, with the name reduced to
@@ -180,17 +116,6 @@ pub fn dataset_tag(name: &str, version: u32) -> String {
         .take(48)
         .collect();
     format!("ds-{safe}-{}-v{version}", &hash_hex(name.as_bytes())[..6])
-}
-
-/// A dataset's summary.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct DatasetInfo {
-    pub name: String,
-    pub description: Option<String>,
-    pub created_at: i64,
-    pub updated_at: i64,
-    pub latest: u32,
-    pub items: usize,
 }
 
 fn digest_of(items: &[ItemRef]) -> String {
@@ -229,7 +154,7 @@ pub async fn commit_dataset(
         Some(i) => Some(dataset_version(rs, name, Some(i.latest)).await?),
         None => None,
     };
-    let new_items: Vec<Item> = items.into_iter().map(Item::new).collect();
+    let new_items: Vec<Item> = items.into_iter().map(new_item).collect();
     let mut seen = std::collections::HashSet::new();
     for i in &new_items {
         if !seen.insert(i.id.clone()) {
@@ -445,36 +370,6 @@ pub async fn dataset_items(rs: &dyn RecordStore, v: &DatasetVersion) -> Result<V
 // ---------------------------------------------------------------------------------------------
 // Results, labels, features
 
-/// One evaluator's verdict on one item.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct Score {
-    pub name: String,
-    /// A number, usually 0 to 1; booleans are stored as 0 or 1.
-    pub value: Option<f64>,
-    pub passed: Option<bool>,
-    pub reason: Option<String>,
-    pub evaluator: String,
-    pub evaluator_version: String,
-}
-
-/// The output and scores of one item in one eval run.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct EvalResult {
-    pub run_id: String,
-    pub item_id: String,
-    pub item_hash: String,
-    pub dataset: String,
-    pub dataset_version: u32,
-    pub output: Value,
-    pub error: Option<String>,
-    pub latency_ms: Option<f64>,
-    pub scores: Vec<Score>,
-    pub created_at: i64,
-    /// The trace recorded while the target produced this output, when tracing was on.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub trace_id: Option<String>,
-}
-
 pub async fn put_results(rs: &dyn RecordStore, results: Vec<EvalResult>) -> Result<()> {
     let rows = results
         .iter()
@@ -510,19 +405,6 @@ pub async fn results_of_runs(
     Ok(out)
 }
 
-/// A human judgement of one item's output, entered in the web app.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct Label {
-    pub run_id: String,
-    pub item_id: String,
-    /// The score it sets, such as `human` or `correct`.
-    pub name: String,
-    pub value: Option<f64>,
-    pub passed: Option<bool>,
-    pub comment: Option<String>,
-    pub created_at: i64,
-}
-
 pub async fn put_label(rs: &dyn RecordStore, mut l: Label) -> Result<Label> {
     l.created_at = now_micros();
     rs.put(vec![(
@@ -541,33 +423,6 @@ pub async fn labels(rs: &dyn RecordStore, run_id: &str) -> Result<Vec<Label>> {
         .into_iter()
         .map(|(_, v)| from_value(v))
         .collect()
-}
-
-/// A sample of one input feature seen by a run, for data drift.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct FeatureSample {
-    pub run_id: String,
-    pub feature: String,
-    /// Numbers for a numeric feature, strings for a categorical one.
-    pub values: Vec<Value>,
-}
-
-impl FeatureSample {
-    /// Numbers, with null standing for a missing or non-finite number.
-    pub fn is_numeric(&self) -> bool {
-        self.values.iter().all(|v| v.is_number() || v.is_null()) && !self.values.is_empty()
-    }
-
-    pub fn numbers(&self) -> Vec<f64> {
-        self.values.iter().filter_map(Value::as_f64).collect()
-    }
-
-    pub fn strings(&self) -> Vec<String> {
-        self.values
-            .iter()
-            .map(|v| v.as_str().map_or_else(|| v.to_string(), str::to_string))
-            .collect()
-    }
 }
 
 pub async fn put_features(rs: &dyn RecordStore, samples: Vec<FeatureSample>) -> Result<()> {
@@ -606,42 +461,6 @@ pub async fn features_of_runs(
 
 // ---------------------------------------------------------------------------------------------
 // Schedules, alerts, baselines
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ScheduleRunStatus {
-    Running,
-    Succeeded,
-    Failed,
-    TimedOut,
-    /// Not started: the previous run of the schedule was still going.
-    SkippedOverlap,
-    /// Not started: missed while the server was down, and the policy is to skip.
-    SkippedMissed,
-    /// Was running when the server stopped; its outcome is unknown.
-    Interrupted,
-}
-
-/// One execution (attempt) of a scheduled command.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct ScheduleRun {
-    /// `{started:020}-{attempt}`; sorts by time.
-    pub id: String,
-    pub schedule: String,
-    /// The fire time this run belongs to (UTC microseconds).
-    pub scheduled_for: i64,
-    pub started_at: i64,
-    pub ended_at: Option<i64>,
-    pub attempt: u32,
-    pub status: ScheduleRunStatus,
-    pub exit_code: Option<i32>,
-    /// The command as configured, for the record.
-    pub command: Vec<String>,
-    /// The last 64 KiB of each stream.
-    pub stdout: String,
-    pub stderr: String,
-    pub reason: Option<String>,
-}
 
 /// Stores a schedule run. Its output goes to a separate key (`schout/{schedule}/{id}`), so listing
 /// runs never loads it and old output can be pruned sooner than the runs themselves.
@@ -779,40 +598,6 @@ pub async fn put_schedule_state(
     rs.flush().await
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum AlertKind {
-    BehaviourDrift,
-    DataDrift,
-    ScheduleFailed,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Severity {
-    Warning,
-    Critical,
-}
-
-/// Something an operator should look at.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct Alert {
-    pub id: String,
-    pub kind: AlertKind,
-    pub severity: Severity,
-    pub title: String,
-    pub detail: String,
-    pub suite: Option<String>,
-    pub run_id: Option<String>,
-    pub schedule: Option<String>,
-    pub created_at: i64,
-    pub acknowledged_at: Option<i64>,
-    /// Alerts with the same key are raised once.
-    pub dedupe: String,
-    /// Whether the webhook accepted it, when one is configured.
-    pub delivered: Option<bool>,
-}
-
 /// Stores `alert` unless one with the same dedupe key exists. Returns the stored alert when new.
 ///
 /// The dedupe key is written first and holds the alert's id, so a failure between the two writes
@@ -867,36 +652,6 @@ pub async fn alerts(rs: &dyn RecordStore) -> Result<Vec<Alert>> {
         .collect::<Result<_>>()?;
     v.reverse();
     Ok(v)
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum BaselineMode {
-    /// The previous `window` runs of the suite.
-    #[default]
-    Rolling,
-    /// A fixed set of runs.
-    Pinned,
-}
-
-/// Which runs a suite's newest run is compared with.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct Baseline {
-    pub mode: BaselineMode,
-    pub window: usize,
-    pub runs: Vec<String>,
-    pub updated_at: i64,
-}
-
-impl Default for Baseline {
-    fn default() -> Self {
-        Self {
-            mode: BaselineMode::Rolling,
-            window: 7,
-            runs: vec![],
-            updated_at: 0,
-        }
-    }
 }
 
 pub async fn baseline(rs: &dyn RecordStore, suite: &str) -> Result<Baseline> {
@@ -1042,12 +797,12 @@ mod tests {
 
     #[tokio::test]
     async fn derived_ids_and_hashes_are_stable() {
-        let a = Item::new(ItemInput {
+        let a = new_item(ItemInput {
             id: None,
             input: json!({"b": 1, "a": 2}),
             ..Default::default()
         });
-        let b = Item::new(ItemInput {
+        let b = new_item(ItemInput {
             id: None,
             input: json!({"a": 2, "b": 1}),
             ..Default::default()

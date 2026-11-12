@@ -30,11 +30,12 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
-use vigily_core::chart::{aggregate, align, x_values, Band, XAxis, Xy};
+use vigily_api::chart::{ChartGroup, ChartRequest, ChartResponse, ChartSeries};
+use vigily_api::runs::{DeleteRuns, Deleted, Meta, MetricStat, RunDetail, RunRow, RunsResponse};
+use vigily_core::chart::{aggregate, align, x_values, Xy};
 use vigily_core::{
     Catalog, Column, Error as CoreError, MemoryRecords, Points, Query, RecordStore, RunEntry,
-    RunPatch, RunStatus, StepRange, Store, Summary,
+    RunPatch, RunStatus, StepRange, Store,
 };
 
 /// How often the catalog is refreshed in the background.
@@ -330,61 +331,6 @@ async fn local_only(req: axum::extract::Request, next: axum::middleware::Next) -
 // ---------------------------------------------------------------------------------------------
 // Types
 
-/// A run as a row of the runs table.
-#[derive(Serialize)]
-pub struct RunRow {
-    pub id: String,
-    /// The name, or the start of the id when the run has none.
-    pub name: String,
-    pub has_name: bool,
-    pub experiment: Option<String>,
-    pub description: Option<String>,
-    pub tags: Vec<String>,
-    pub status: RunStatus,
-    /// `training`, `eval` or another kind.
-    pub kind: String,
-    /// The target reference (model, prompt, endpoint, git sha), or null.
-    pub target: Value,
-    pub archived: bool,
-    pub created_at: i64,
-    pub updated_at: i64,
-    pub ended_at: Option<i64>,
-    /// The last sign of life: a heartbeat, metadata write or point (microseconds, UTC).
-    pub last_seen: i64,
-    /// Running, but nothing heard for 10 minutes: the process most likely died.
-    pub stale: bool,
-    /// Seconds, up to now for running runs.
-    pub duration: f64,
-    pub params: BTreeMap<String, Value>,
-    pub metrics: BTreeMap<String, MetricStat>,
-}
-
-/// The statistics of one series shown in the runs table.
-#[derive(Serialize)]
-pub struct MetricStat {
-    pub last: Option<f64>,
-    pub min: Option<f64>,
-    pub max: Option<f64>,
-    pub count: u64,
-    pub last_step: Option<i64>,
-    pub min_step: Option<i64>,
-    pub max_step: Option<i64>,
-}
-
-impl From<&Summary> for MetricStat {
-    fn from(s: &Summary) -> Self {
-        Self {
-            last: s.last,
-            min: s.min,
-            max: s.max,
-            count: s.count,
-            last_step: s.last_step,
-            min_step: s.min_step,
-            max_step: s.max_step,
-        }
-    }
-}
-
 fn row(e: &RunEntry, now: i64) -> RunRow {
     let r = &e.run;
     RunRow {
@@ -416,29 +362,10 @@ fn row(e: &RunEntry, now: i64) -> RunRow {
 // ---------------------------------------------------------------------------------------------
 // Handlers
 
-#[derive(Serialize)]
-struct Meta {
-    version: &'static str,
-    repository: String,
-    runs: usize,
-    running: usize,
-    archived: usize,
-    /// Runs per kind.
-    kinds: BTreeMap<String, usize>,
-    datasets: usize,
-    schedules: usize,
-    open_alerts: usize,
-    traces: usize,
-    refreshed_at: i64,
-    experiments: Vec<vigily_core::catalog::ExperimentInfo>,
-    metrics: Vec<vigily_core::catalog::MetricInfo>,
-    params: Vec<vigily_core::catalog::ParamInfo>,
-}
-
 async fn meta(State(s): State<Arc<AppState>>) -> ApiResult<Meta> {
     let snap = s.catalog.refresh_if_older(1_000_000).await?;
     Ok(Json(Meta {
-        version: s.version,
+        version: s.version.to_string(),
         repository: s.catalog.store().location(),
         runs: snap.runs.len(),
         running: snap
@@ -475,13 +402,6 @@ struct RunsParams {
     desc: bool,
     #[serde(default)]
     archived: bool,
-}
-
-#[derive(Serialize)]
-struct RunsResponse {
-    total: usize,
-    rows: Vec<RunRow>,
-    refreshed_at: i64,
 }
 
 async fn runs(
@@ -522,14 +442,6 @@ async fn runs(
         rows,
         refreshed_at: snap.refreshed_at,
     }))
-}
-
-#[derive(Serialize)]
-struct RunDetail {
-    #[serde(flatten)]
-    row: RunRow,
-    params_tree: Value,
-    series: Vec<vigily_core::catalog::SeriesEntry>,
 }
 
 async fn run(State(s): State<Arc<AppState>>, Path(id): Path<String>) -> ApiResult<RunDetail> {
@@ -587,16 +499,6 @@ async fn patch_run(
     Ok(Json(row(e, vigily_core::now_micros())))
 }
 
-#[derive(Deserialize)]
-struct DeleteRuns {
-    ids: Vec<String>,
-}
-
-#[derive(Serialize)]
-struct Deleted {
-    deleted: usize,
-}
-
 /// Deletes finished, failed or aborted runs with their parameters, series, points and evaluation
 /// records. A running run is refused: its writer would keep writing to it, so it must be stopped
 /// (finished or aborted) first.
@@ -643,40 +545,6 @@ async fn delete_runs(
     Ok(Json(Deleted { deleted }))
 }
 
-fn default_points() -> usize {
-    800
-}
-
-#[derive(Deserialize)]
-struct ChartRequest {
-    runs: Vec<String>,
-    /// A metric key: `loss` or `loss[val]`.
-    metric: String,
-    #[serde(default)]
-    x: XAxis,
-    /// Zoom: the visible x range.
-    range: Option<[f64; 2]>,
-    /// The chart's width in pixels; the response has at most about twice as many x values.
-    #[serde(default = "default_points")]
-    points: usize,
-    /// A column id; runs with the same value form a group.
-    group_by: Option<String>,
-    /// Draw each group as a mean with a min-max band instead of one line per run.
-    #[serde(default)]
-    aggregate: bool,
-}
-
-#[derive(Serialize)]
-struct ChartSeries {
-    run_id: String,
-    name: String,
-    group: Option<String>,
-    y: Vec<Option<f64>>,
-    /// The last finite point in the visible range, `[x, y]`: the downsampled line may end on a
-    /// bucket's minimum or maximum rather than on it.
-    last: Option<[f64; 2]>,
-}
-
 fn last_point(xy: &Xy, range: Option<(f64, f64)>) -> Option<[f64; 2]> {
     let hi = range.map_or(f64::INFINITY, |r| r.1);
     let lo = range.map_or(f64::NEG_INFINITY, |r| r.0);
@@ -685,28 +553,6 @@ fn last_point(xy: &Xy, range: Option<(f64, f64)>) -> Option<[f64; 2]> {
         .rev()
         .find(|(x, y)| **x <= hi && **x >= lo && y.is_finite())
         .map(|(x, y)| [*x, *y])
-}
-
-#[derive(Serialize)]
-struct ChartGroup {
-    label: String,
-    runs: usize,
-    #[serde(flatten)]
-    band: Band,
-}
-
-#[derive(Serialize)]
-struct ChartResponse {
-    metric: String,
-    x_axis: XAxis,
-    x: Vec<f64>,
-    exact: bool,
-    /// The full x range of the data, to reset a zoom.
-    domain: Option<[f64; 2]>,
-    series: Vec<ChartSeries>,
-    groups: Vec<ChartGroup>,
-    /// Requested runs that do not log this metric.
-    missing: Vec<String>,
 }
 
 fn label(v: &vigily_core::query::Val) -> String {

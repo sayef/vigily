@@ -19,6 +19,7 @@ gcs = ["kv0?/gcp"]
 azure = ["kv0?/azure"]
 
 [dependencies]
+vigily-api.workspace = true
 kv0 = { workspace = true, optional = true }
 async-trait.workspace = true
 parking_lot.workspace = true

@@ -10,6 +10,7 @@ repository.workspace = true
 homepage.workspace = true
 
 [dependencies]
+vigily-api.workspace = true
 vigily-core.workspace = true
 vigily-ui.workspace = true
 axum.workspace = true

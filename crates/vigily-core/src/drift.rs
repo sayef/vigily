@@ -22,7 +22,6 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::catalog::{RunEntry, Snapshot};
@@ -31,6 +30,10 @@ use crate::evals::{self, Baseline, BaselineMode, EvalResult, FeatureSample};
 use crate::model::RunStatus;
 use crate::records::RecordStore;
 use crate::stats;
+
+pub use vigily_api::drift::{
+    BehaviourDrift, Bin, DriftConfig, FeatureDrift, Flip, Level, Suite, SuiteRun, TestResult,
+};
 
 /// The reserved parameter under which the SDK records what an eval run evaluated.
 pub const EVAL_META: &str = "__eval__";
@@ -41,47 +44,6 @@ pub const PSI_MODERATE: f64 = 0.1;
 pub const PSI_DRIFT: f64 = 0.2;
 pub const JS_MODERATE: f64 = 0.05;
 pub const JS_DRIFT: f64 = 0.1;
-
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
-pub struct DriftConfig {
-    pub alpha: f64,
-    pub min_effect: f64,
-}
-
-impl Default for DriftConfig {
-    fn default() -> Self {
-        Self {
-            alpha: 0.01,
-            min_effect: 0.02,
-        }
-    }
-}
-
-/// One run of a suite.
-#[derive(Clone, Debug, Serialize)]
-pub struct SuiteRun {
-    pub run_id: String,
-    pub name: String,
-    pub created_at: i64,
-    pub status: RunStatus,
-    pub dataset_version: Option<u64>,
-    pub schedule: Option<String>,
-    /// Aggregate scores by score name.
-    pub scores: BTreeMap<String, f64>,
-}
-
-/// Eval runs that measure the same thing.
-#[derive(Clone, Debug, Serialize)]
-pub struct Suite {
-    pub key: String,
-    pub experiment: Option<String>,
-    pub target: Value,
-    pub dataset: Option<String>,
-    pub schedule: Option<String>,
-    /// Oldest first.
-    pub runs: Vec<SuiteRun>,
-    pub scores: Vec<String>,
-}
 
 fn eval_meta(e: &RunEntry) -> &Value {
     e.params.get(EVAL_META).unwrap_or(&Value::Null)
@@ -203,52 +165,6 @@ pub fn baseline_runs<'a>(
     }
 }
 
-/// An item whose verdict changed between the previous run and this one.
-#[derive(Clone, Debug, Serialize)]
-pub struct Flip {
-    pub item_id: String,
-    pub before: Option<f64>,
-    pub after: Option<f64>,
-}
-
-/// A test statistic and its p-value.
-#[derive(Clone, Copy, Debug, Serialize)]
-pub struct TestResult {
-    /// `wilcoxon signed-rank` (paired) or `mann-whitney u` (unpaired fallback).
-    pub name: &'static str,
-    pub statistic: f64,
-    pub z: f64,
-    pub p: f64,
-}
-
-/// The behaviour-drift verdict for one score of one run.
-#[derive(Clone, Debug, Serialize)]
-pub struct BehaviourDrift {
-    pub score: String,
-    pub run_id: String,
-    pub baseline_runs: Vec<String>,
-    pub higher_is_better: bool,
-    /// True when items were matched and tested in pairs; false for the unpaired fallback.
-    pub paired: bool,
-    /// Items compared: matched pairs when paired, else the run's items.
-    pub n_current: usize,
-    /// Baseline values compared: the same matched items when paired, else per-item means.
-    pub n_baseline: usize,
-    pub current_mean: f64,
-    pub baseline_mean: f64,
-    pub baseline_std: f64,
-    /// current − baseline.
-    pub delta: f64,
-    pub ci: Option<(f64, f64)>,
-    pub test: Option<TestResult>,
-    pub worse: bool,
-    pub drifted: bool,
-    /// The previous run, against which regressions are counted.
-    pub previous_run: Option<String>,
-    pub regressions: Vec<Flip>,
-    pub fixed: Vec<Flip>,
-}
-
 /// One item's score in one run: value, pass verdict and the item's content hash.
 #[derive(Clone, Debug)]
 struct ItemScore {
@@ -343,7 +259,7 @@ fn compare(
         let cur: Vec<f64> = pairs.iter().map(|p| p.0).collect();
         let bas: Vec<f64> = pairs.iter().map(|p| p.1).collect();
         let test = stats::wilcoxon_signed_rank(&diffs).map(|t| TestResult {
-            name: "wilcoxon signed-rank",
+            name: "wilcoxon signed-rank".into(),
             statistic: t.statistic,
             z: t.z,
             p: t.p,
@@ -361,7 +277,7 @@ fn compare(
         let cur: Vec<f64> = ids.iter().map(|id| current[*id].value).collect();
         let bas: Vec<f64> = means.values().copied().collect();
         let test = stats::mann_whitney(&cur, &bas).map(|t| TestResult {
-            name: "mann-whitney u",
+            name: "mann-whitney u".into(),
             statistic: t.u,
             z: t.z,
             p: t.p,
@@ -378,7 +294,8 @@ fn compare(
         )
     };
     let worse = if higher { delta < 0.0 } else { delta > 0.0 };
-    let drifted = worse && delta.abs() >= cfg.min_effect && test.is_some_and(|t| t.p < cfg.alpha);
+    let drifted =
+        worse && delta.abs() >= cfg.min_effect && test.as_ref().is_some_and(|t| t.p < cfg.alpha);
     let (mut regressions, mut fixed) = (Vec::new(), Vec::new());
     let previous = base.last();
     if let Some((_, prev)) = previous {
@@ -492,39 +409,6 @@ pub fn lower_is_better(score: &str) -> bool {
     .any(|w| s.contains(w))
 }
 
-/// One bin or category of a distribution comparison, as shares of each sample.
-#[derive(Clone, Debug, Serialize)]
-pub struct Bin {
-    pub label: String,
-    pub baseline: f64,
-    pub current: f64,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Level {
-    Stable,
-    Moderate,
-    Drift,
-}
-
-/// The data-drift verdict for one feature of one run.
-#[derive(Clone, Debug, Serialize)]
-pub struct FeatureDrift {
-    pub feature: String,
-    pub kind: &'static str,
-    pub n_baseline: usize,
-    pub n_current: usize,
-    pub psi: Option<f64>,
-    pub ks: Option<stats::Ks>,
-    pub js: Option<f64>,
-    pub chi_squared: Option<stats::ChiSquared>,
-    pub level: Level,
-    /// Why the usual measures are missing, when they are.
-    pub note: Option<String>,
-    pub bins: Vec<Bin>,
-}
-
 fn label_num(v: f64) -> String {
     let a = v.abs();
     if a != 0.0 && (a < 1e-3 || a >= 1e6) {
@@ -553,7 +437,7 @@ pub fn feature_drift(baseline: &[&FeatureSample], current: &FeatureSample) -> Fe
         if b.is_empty() || c.is_empty() {
             return FeatureDrift {
                 feature: current.feature.clone(),
-                kind: "numeric",
+                kind: "numeric".into(),
                 n_baseline: b.len(),
                 n_current: c.len(),
                 psi: None,
@@ -600,7 +484,7 @@ pub fn feature_drift(baseline: &[&FeatureSample], current: &FeatureSample) -> Fe
         };
         FeatureDrift {
             feature: current.feature.clone(),
-            kind: "numeric",
+            kind: "numeric".into(),
             n_baseline: b.len(),
             n_current: c.len(),
             psi,
@@ -656,7 +540,7 @@ pub fn feature_drift(baseline: &[&FeatureSample], current: &FeatureSample) -> Fe
         };
         FeatureDrift {
             feature: current.feature.clone(),
-            kind: "categorical",
+            kind: "categorical".into(),
             n_baseline: b.len(),
             n_current: c.len(),
             psi: None,
@@ -912,14 +796,14 @@ mod tests {
         let moved = mk((0..1000).map(|i| json!((i % 100) as f64 + 40.0)).collect());
         assert_eq!(feature_drift(&[&base], &same).level, Level::Stable);
         let d = feature_drift(&[&base], &moved);
-        assert_eq!((d.level, d.kind), (Level::Drift, "numeric"));
+        assert_eq!((d.level, d.kind), (Level::Drift, "numeric".to_string()));
         assert_eq!(d.bins.len(), 10);
         let langs = |s: &str| {
             let one: Vec<Value> = s.chars().map(|c| json!(c.to_string())).collect();
             mk(one.iter().cycle().take(one.len() * 50).cloned().collect())
         };
         let d = feature_drift(&[&langs("eeeedf")], &langs("eddddf"));
-        assert_eq!((d.level, d.kind), (Level::Drift, "categorical"));
+        assert_eq!((d.level, d.kind), (Level::Drift, "categorical".to_string()));
         assert!(d.chi_squared.unwrap().p < 0.001);
         // NaN and infinities are stored as JSON null: a feature that lost every finite value.
         let all_nan = mk(vec![Value::Null; 3]);
