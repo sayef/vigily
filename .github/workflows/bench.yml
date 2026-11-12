@@ -40,17 +40,21 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
       - run: cargo build --release -p vigily-cli -p vigily-server
-      - run: uv sync --no-install-project && uv run --no-sync maturin develop --release
+      - run: uv sync
       - name: Log synthetic runs and time the API
         env:
           RUNS: ${{ inputs.runs || '1000' }}
           POINTS: ${{ inputs.points || '1000' }}
+          # The SDK logs through an engine it starts; scale.sh then serves the repository itself.
+          VIGILY_ENGINE: target/release/vigily-engine
+          VIGILY_STATE_DIR: ${{ runner.temp }}/state
         run: |
           {
             echo "## Scale benchmark: $RUNS runs, $POINTS points each"
             echo
             echo '```'
             uv run --no-sync python bench/scale.py --runs "$RUNS" --points "$POINTS" --repo "$RUNNER_TEMP/scale"
+            target/release/vigily stop --repo "$RUNNER_TEMP/scale" >/dev/null
             bash bench/scale.sh "$RUNNER_TEMP/scale"
             echo '```'
           } | tee -a "$GITHUB_STEP_SUMMARY"

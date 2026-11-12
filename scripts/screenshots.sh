@@ -21,8 +21,7 @@ fi
 if [ "${SKIP_BUILD:-}" != 1 ]; then
   (cd crates/vigily-ui && npm ci --silent --no-audit --no-fund && npm run build --silent)
   cargo build --release -p vigily-cli -p vigily-server
-  uv sync --no-install-project --quiet
-  uv run --no-sync maturin develop --release --quiet
+  uv sync --quiet
 fi
 (cd crates/vigily-ui && [ -x node_modules/.bin/playwright ] || npm ci --silent --no-audit --no-fund)
 
@@ -33,8 +32,11 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# The demos log through an engine they start in the background; it is stopped before serving.
+export VIGILY_STATE_DIR="$WORK/state" VIGILY_ENGINE="$(dirname "$BIN")/vigily-engine"
 uv run --no-sync python examples/demo.py --repo "$WORK/demo"
 uv run --no-sync python examples/eval_demo.py --repo "$WORK/demo"
+"$BIN" stop --repo "$WORK/demo" >/dev/null
 "$BIN" up --repo "$WORK/demo" --config examples/vigily.toml --port "$PORT" --token-file "$WORK/token" > "$WORK/up.log" 2>&1 &
 SERVER=$!
 for _ in $(seq 60); do
