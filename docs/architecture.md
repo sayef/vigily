@@ -12,10 +12,21 @@ browser ── vigily-ui (embedded) ── vigily-server (axum) ─┘
 
 The JSON of the HTTP API: the run model (`model.rs`), the catalog's series and key lists, chart
 requests and answers, evaluation, drift and trace types, and the answer of every route. It holds
-data types only and depends on serde alone, so a client can use it without the storage engine.
-`vigily-core` re-exports these types under their old paths. `tests/fixtures` holds one golden JSON
-file per answer, captured from the server; `tests/wire.rs` reads each into its type and writes it
-back unchanged, keys in the same order.
+data types only and depends on serde (and sha2 for `local`'s repository key), so a client can use
+it without the storage engine. `vigily-core` re-exports these types under their old paths.
+`tests/fixtures` holds one golden JSON file per answer, captured from the server; `tests/wire.rs`
+reads each into its type and writes it back unchanged, keys in the same order.
+
+The `client` feature adds `client::Client`, one async method per route (reqwest with rustls,
+kept-alive connections, the token as `Authorization: Bearer`, request bodies over 64 KiB sent
+gzip-compressed), with errors as `Error::Api(ApiError { status, code, message, position })`,
+`Error::Unreachable` or `Error::Unexpected`. `follow_schedule_run` polls a schedule run through
+its retries. `local::resolve` finds the engine for a repository: `VIGILY_URL` (with
+`VIGILY_TOKEN`) as given; else the repository's `engines/<key>.json` when its lock is held and
+`GET /api/v1/info` answers within 300 ms; else it starts `vigily-engine --repo <location>
+--idle-timeout 30m --detach` (from `VIGILY_ENGINE`, beside the running program, or on PATH) and
+waits up to 30 seconds. Clients racing to start one converge on the engine that took the lock.
+The tests run against engines in `crates/vigily-server/tests/client.rs`.
 
 ## vigily-core
 

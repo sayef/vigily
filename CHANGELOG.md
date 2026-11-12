@@ -100,6 +100,10 @@ The first release, published as betas (0.1.0-beta.N) before 0.1.0.
   on the same repository exits with code 3 and names the first one's address. An engine started
   with `--detach` logs to `engines/<key>.log`, takes a free port when its own is taken and stops
   after 30 idle minutes.
+- A typed Rust client for `/api/v1` in `vigily-api` (feature `client`), one method per route, with
+  structured errors and gzip-compressed large request bodies, and `vigily_api::local::resolve`,
+  which finds a repository's engine (`VIGILY_URL`, then its state file) or starts one in the
+  background. `GET /api/v1/schedules` also answers each schedule's `retry_delay`.
 
 ### Changed
 

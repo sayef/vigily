@@ -324,3 +324,51 @@ pub struct Flushed {
     /// When the catalog was refreshed (UTC microseconds).
     pub refreshed_at: i64,
 }
+
+fn is_false(b: &bool) -> bool {
+    !*b
+}
+
+fn is_zero(n: &usize) -> bool {
+    *n == 0
+}
+
+/// `GET runs`: the query string.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct RunsQuery {
+    /// A run query, as in the web app: `status:failed lr<0.01`.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub q: String,
+    /// A column id: `run:name`, `param:<key>`, `metric:<last|min|max>:<metric>`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sort: Option<String>,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub desc: bool,
+    /// Include archived runs.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub archived: bool,
+    /// The first matching row to answer with.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub offset: usize,
+    /// At most this many rows (1 to 10 000); every matching row when not set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limit: Option<usize>,
+    #[serde(default)]
+    pub fields: RunFields,
+}
+
+/// `GET runs/{id}/points`: the query string.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct PointsQuery {
+    /// The metric name.
+    pub name: String,
+    /// The context as a JSON object (`{"subset":"val"}`); none for a series without context.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context: Option<String>,
+    /// UTC microseconds: points at or after.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start_time: Option<i64>,
+    /// UTC microseconds: points before.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stop_time: Option<i64>,
+}

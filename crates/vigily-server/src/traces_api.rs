@@ -145,29 +145,7 @@ pub(crate) async fn count(s: &AppState) -> Result<usize, ApiError> {
     Ok(n)
 }
 
-#[derive(Deserialize)]
-struct ListParams {
-    run: Option<String>,
-    model: Option<String>,
-    /// `ok` or `error`.
-    status: Option<String>,
-    /// UTC microseconds: traces that started at or after.
-    since: Option<i64>,
-    /// UTC microseconds: traces that started before.
-    until: Option<i64>,
-    /// Part of the trace name, case-insensitive.
-    #[serde(default)]
-    q: String,
-    eval_item: Option<String>,
-    #[serde(default = "default_limit")]
-    limit: usize,
-    #[serde(default)]
-    offset: usize,
-}
-
-fn default_limit() -> usize {
-    200
-}
+use vigily_api::traces::TracesQuery as ListParams;
 
 fn run_name(snap: &vigily_core::Snapshot, id: Option<&str>) -> Option<String> {
     id.and_then(|i| snap.get(i)).map(|e| e.run.display_name())

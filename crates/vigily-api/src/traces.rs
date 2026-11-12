@@ -448,3 +448,50 @@ pub struct TracingPolicy {
     /// The currency of costs.
     pub currency: String,
 }
+
+/// `GET traces`: the query string.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct TracesQuery {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub run: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    /// `ok` or `error`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
+    /// UTC microseconds: traces that started at or after.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub since: Option<i64>,
+    /// UTC microseconds: traces that started before.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub until: Option<i64>,
+    /// Part of the trace name, case-insensitive.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub q: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub eval_item: Option<String>,
+    #[serde(default = "default_traces_limit")]
+    pub limit: usize,
+    #[serde(default)]
+    pub offset: usize,
+}
+
+fn default_traces_limit() -> usize {
+    200
+}
+
+impl Default for TracesQuery {
+    fn default() -> Self {
+        TracesQuery {
+            run: None,
+            model: None,
+            status: None,
+            since: None,
+            until: None,
+            q: String::new(),
+            eval_item: None,
+            limit: default_traces_limit(),
+            offset: 0,
+        }
+    }
+}
