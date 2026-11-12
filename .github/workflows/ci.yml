@@ -15,8 +15,6 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
-  # kv0 is a git dependency (Cargo.toml, pinned by Cargo.lock); this token reads it while it is private.
-  KV0_TOKEN: ${{ secrets.KV0_TOKEN }}
 
 jobs:
   secrets:
@@ -98,9 +96,6 @@ jobs:
         with:
           persist-credentials: false
           path: vigily
-      - name: Credentials for kv0 (a private git dependency until it is published)
-        if: env.KV0_TOKEN != ''
-        run: git config --global url."https://x-access-token:${KV0_TOKEN}@github.com/sayef/kv0".insteadOf "https://github.com/sayef/kv0"
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: ui-dist
@@ -136,9 +131,6 @@ jobs:
         with:
           persist-credentials: false
           path: vigily
-      - name: Credentials for kv0 (a private git dependency until it is published)
-        if: env.KV0_TOKEN != ''
-        run: git config --global url."https://x-access-token:${KV0_TOKEN}@github.com/sayef/kv0".insteadOf "https://github.com/sayef/kv0"
       - run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
         with:
@@ -166,9 +158,6 @@ jobs:
         with:
           persist-credentials: false
           path: vigily
-      - name: Credentials for kv0 (a private git dependency until it is published)
-        if: env.KV0_TOKEN != ''
-        run: git config --global url."https://x-access-token:${KV0_TOKEN}@github.com/sayef/kv0".insteadOf "https://github.com/sayef/kv0"
       - run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
         with:
@@ -185,9 +174,6 @@ jobs:
         with:
           persist-credentials: false
           path: vigily
-      - name: Credentials for kv0 (a private git dependency until it is published)
-        if: env.KV0_TOKEN != ''
-        run: git config --global url."https://x-access-token:${KV0_TOKEN}@github.com/sayef/kv0".insteadOf "https://github.com/sayef/kv0"
       - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
         with:
           manifest-path: vigily/Cargo.toml

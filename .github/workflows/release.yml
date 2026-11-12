@@ -27,10 +27,6 @@ on:
 permissions:
   contents: read
 
-env:
-  # kv0 is a git dependency (Cargo.toml, pinned by Cargo.lock); this token reads it while it is private.
-  KV0_TOKEN: ${{ secrets.KV0_TOKEN }}
-
 jobs:
   tag:
     if: >-
@@ -103,9 +99,6 @@ jobs:
           ref: ${{ needs.tag.outputs.tag }}
           persist-credentials: false
           path: vigily
-      - name: Credentials for kv0 (a private git dependency until it is published)
-        if: env.KV0_TOKEN != ''
-        run: git config --global url."https://x-access-token:${KV0_TOKEN}@github.com/sayef/kv0".insteadOf "https://github.com/sayef/kv0"
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: ui-dist
@@ -151,9 +144,6 @@ jobs:
           ref: ${{ needs.tag.outputs.tag }}
           persist-credentials: false
           path: vigily
-      - name: Credentials for kv0 (a private git dependency until it is published)
-        if: env.KV0_TOKEN != ''
-        run: git config --global url."https://x-access-token:${KV0_TOKEN}@github.com/sayef/kv0".insteadOf "https://github.com/sayef/kv0"
       - if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
       - if: runner.os == 'macOS'

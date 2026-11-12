@@ -24,8 +24,6 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
-  # kv0 is a git dependency (Cargo.toml, pinned by Cargo.lock); this token reads it while it is private.
-  KV0_TOKEN: ${{ secrets.KV0_TOKEN }}
 
 jobs:
   scale:
@@ -35,9 +33,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Credentials for kv0 (a private git dependency until it is published)
-        if: env.KV0_TOKEN != ''
-        run: git config --global url."https://x-access-token:${KV0_TOKEN}@github.com/sayef/kv0".insteadOf "https://github.com/sayef/kv0"
       - run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
         with:
