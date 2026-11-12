@@ -26,23 +26,24 @@ use crate::{ApiError, AppState};
 
 type ApiResult<T> = Result<Json<T>, ApiError>;
 
+/// The evaluation routes, relative to the API root.
 pub fn routes() -> Router<Arc<AppState>> {
     Router::new()
-        .route("/api/datasets", get(list_datasets))
-        .route("/api/datasets/{name}", get(dataset))
-        .route("/api/runs/{id}/items", get(run_items))
-        .route("/api/runs/{id}/labels", post(add_label))
-        .route("/api/runs/{id}/audit", get(audit))
-        .route("/api/compare", get(compare))
-        .route("/api/schedules", get(schedules))
-        .route("/api/schedules/{name}/runs", get(schedule_runs))
-        .route("/api/schedules/{name}/runs/{id}", get(schedule_run))
-        .route("/api/suites", get(suites))
-        .route("/api/suites/{key}", get(suite))
-        .route("/api/suites/{key}/baseline", put(set_baseline))
-        .route("/api/suites/{key}/data-drift", get(data_drift))
-        .route("/api/alerts", get(alerts))
-        .route("/api/alerts/{id}", post(update_alert))
+        .route("/datasets", get(list_datasets))
+        .route("/datasets/{name}", get(dataset))
+        .route("/runs/{id}/items", get(run_items))
+        .route("/runs/{id}/labels", post(add_label))
+        .route("/runs/{id}/audit", get(audit))
+        .route("/compare", get(compare))
+        .route("/schedules", get(schedules))
+        .route("/schedules/{name}/runs", get(schedule_runs))
+        .route("/schedules/{name}/runs/{id}", get(schedule_run))
+        .route("/suites", get(suites))
+        .route("/suites/{key}", get(suite))
+        .route("/suites/{key}/baseline", put(set_baseline))
+        .route("/suites/{key}/data-drift", get(data_drift))
+        .route("/alerts", get(alerts))
+        .route("/alerts/{id}", post(update_alert))
 }
 
 fn bad(m: impl Into<String>) -> ApiError {

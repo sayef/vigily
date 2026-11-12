@@ -1,16 +1,23 @@
-//! vigily's HTTP server: a JSON API under `/api/` over a [`Catalog`], and the embedded web app
+//! vigily's HTTP server: a JSON API under `/api/v1` over a [`Catalog`], and the embedded web app
 //! for every other path.
 //!
-//! | Method and path        | What it returns |
-//! |------------------------|-----------------|
-//! | `GET /api/meta`        | Repository, counts, experiments, metric keys and parameter keys |
-//! | `GET /api/runs`        | Runs matching `q`, sorted by `sort` (a column id), with parameters and metric statistics |
-//! | `GET /api/runs/{id}`   | One run with its parameter tree and series |
-//! | `PATCH /api/runs/{id}` | Changes name, experiment, notes, tags or archived |
-//! | `POST /api/chart`      | One metric for many runs, aligned and downsampled for a chart |
-//! | `GET /api/health`      | `ok` |
+//! | Method and path           | What it returns |
+//! |---------------------------|-----------------|
+//! | `GET /api/v1/health`      | `ok` |
+//! | `GET /api/v1/info`        | Version, API version, mode and capabilities |
+//! | `GET /api/v1/meta`        | Repository, counts, experiments, metric keys and parameter keys |
+//! | `GET /api/v1/runs`        | Runs matching `q`, sorted by `sort` (a column id), with parameters and metric statistics |
+//! | `GET /api/v1/runs/{id}`   | One run with its parameter tree and series |
+//! | `PATCH /api/v1/runs/{id}` | Changes name, experiment, notes, tags or archived |
+//! | `POST /api/v1/runs/delete`| Deletes runs that are not running |
+//! | `POST /api/v1/chart`      | One metric for many runs, aligned and downsampled for a chart |
 //!
-//! Evaluations are served by [`evals_api`], traces by [`traces_api`].
+//! Evaluations are served by [`evals_api`], traces by [`traces_api`]. Errors answer
+//! `{"error": {"code", "message", "position"?}}` ([`vigily_api::ErrorBody`]).
+//!
+//! Every route is also served at its old path under `/api/` (without `v1`), with a `Deprecation`
+//! header, a `Link` to its successor and the flat `{"error": "..."}` body of earlier releases.
+//! OpenTelemetry's `POST /v1/traces` stays at the root.
 
 pub mod config;
 pub mod evals_api;
@@ -24,14 +31,15 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use axum::extract::{Path, Query as QueryParams, State};
-use axum::http::{header, StatusCode};
+use axum::http::{header, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use parking_lot::Mutex;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use vigily_api::chart::{ChartGroup, ChartRequest, ChartResponse, ChartSeries};
 use vigily_api::runs::{DeleteRuns, Deleted, Meta, MetricStat, RunDetail, RunRow, RunsResponse};
+use vigily_api::{code, ErrorBody, ErrorDetail, Info, LegacyErrorBody, API_VERSION};
 use vigily_core::chart::{aggregate, align, x_values, Xy};
 use vigily_core::{
     Catalog, Column, Error as CoreError, MemoryRecords, Points, Query, RecordStore, RunEntry,
@@ -156,21 +164,66 @@ impl PointCache {
     }
 }
 
-/// An API error: a status and a sentence that names the problem and the way out.
-#[derive(Debug)]
+/// An API error: a status, a machine-readable code and a sentence that names the problem and the
+/// way out. On `/api/v1` it answers `{"error": {"code", "message", "position"?}}`; the deprecated
+/// `/api/*` aliases rewrite it to the flat `{"error": "...", "position"?}` they always had.
+#[derive(Clone, Debug)]
 pub struct ApiError {
     status: StatusCode,
+    code: &'static str,
     message: String,
     position: Option<usize>,
+}
+
+/// The code an error of this status has unless a route names a more specific one.
+fn code_of(status: StatusCode) -> &'static str {
+    match status {
+        StatusCode::NOT_FOUND | StatusCode::METHOD_NOT_ALLOWED => code::NOT_FOUND,
+        StatusCode::CONFLICT => code::CONFLICT,
+        StatusCode::UNAUTHORIZED => code::UNAUTHORIZED,
+        StatusCode::FORBIDDEN => code::FORBIDDEN,
+        StatusCode::PAYLOAD_TOO_LARGE => code::TOO_LARGE,
+        StatusCode::SERVICE_UNAVAILABLE | StatusCode::TOO_MANY_REQUESTS => code::OVERLOADED,
+        s if s.is_server_error() => code::INTERNAL,
+        _ => code::INVALID_ARGUMENT,
+    }
 }
 
 impl ApiError {
     pub(crate) fn new(status: StatusCode, message: impl Into<String>) -> Self {
         Self {
             status,
+            code: code_of(status),
             message: message.into(),
             position: None,
         }
+    }
+
+    /// The same error with a more specific code than its status implies.
+    #[allow(dead_code)]
+    pub(crate) fn with_code(mut self, code: &'static str) -> Self {
+        self.code = code;
+        self
+    }
+
+    pub fn status(&self) -> StatusCode {
+        self.status
+    }
+
+    pub fn code(&self) -> &'static str {
+        self.code
+    }
+
+    /// The flat body of the deprecated `/api/*` aliases.
+    fn legacy_response(&self) -> Response {
+        (
+            self.status,
+            Json(LegacyErrorBody {
+                error: self.message.clone(),
+                position: self.position,
+            }),
+        )
+            .into_response()
     }
 }
 
@@ -186,39 +239,126 @@ impl From<CoreError> for ApiError {
 
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
-        #[derive(Serialize)]
-        struct Body {
-            error: String,
-            #[serde(skip_serializing_if = "Option::is_none")]
-            position: Option<usize>,
-        }
-        (
-            self.status,
-            Json(Body {
-                error: self.message,
+        let body = ErrorBody {
+            error: ErrorDetail {
+                code: self.code.to_string(),
+                message: self.message.clone(),
                 position: self.position,
-            }),
-        )
-            .into_response()
+            },
+        };
+        let mut res = (self.status, Json(body)).into_response();
+        // The legacy aliases rebuild their flat body from this.
+        res.extensions_mut().insert(self);
+        res
     }
 }
 
 type ApiResult<T> = Result<Json<T>, ApiError>;
 
-/// The router: the API plus the embedded web app.
-pub fn router(state: Arc<AppState>) -> Router {
+/// The JSON API, relative to its root: mounted at `/api/v1`, and at `/api` as deprecated aliases.
+fn api() -> Router<Arc<AppState>> {
     Router::new()
-        .route("/api/health", get(|| async { "ok" }))
-        .route("/api/meta", get(meta))
-        .route("/api/runs", get(runs))
-        .route("/api/runs/{id}", get(run).patch(patch_run))
-        .route("/api/runs/delete", post(delete_runs))
-        .route("/api/chart", post(chart))
+        .route("/health", get(|| async { "ok" }))
+        .route("/meta", get(meta))
+        .route("/runs", get(runs))
+        .route("/runs/{id}", get(run).patch(patch_run))
+        .route("/runs/delete", post(delete_runs))
+        .route("/chart", post(chart))
         .merge(evals_api::routes())
         .merge(traces_api::routes())
+}
+
+/// The route groups this engine serves (`GET /api/v1/info`).
+pub const CAPABILITIES: &[&str] = &[
+    "runs",
+    "charts",
+    "datasets",
+    "evals",
+    "schedules",
+    "suites",
+    "alerts",
+    "traces",
+    "otlp",
+];
+
+async fn info(State(s): State<Arc<AppState>>) -> Json<Info> {
+    Json(Info {
+        version: s.version.to_string(),
+        api_version: API_VERSION.to_string(),
+        mode: "local".to_string(),
+        capabilities: CAPABILITIES.iter().map(|c| c.to_string()).collect(),
+    })
+}
+
+/// The router: `/api/v1`, its deprecated `/api/*` aliases, OTLP at `/v1/traces`, and the embedded
+/// web app for every other path.
+pub fn router(state: Arc<AppState>) -> Router {
+    Router::new()
+        .nest(
+            "/api/v1",
+            api()
+                .route("/info", get(info))
+                .layer(axum::middleware::from_fn(v1_errors)),
+        )
+        .nest("/api", api().layer(axum::middleware::from_fn(legacy)))
+        .merge(traces_api::otlp_routes())
         .fallback(asset)
         .layer(tower_http::compression::CompressionLayer::new())
         .with_state(state)
+}
+
+/// The largest error body that is rewritten into the structured shape; extractor rejections are a
+/// sentence long.
+const MAX_REWRITTEN_ERROR: usize = 64 * 1024;
+
+/// Gives every `/api/v1` error the structured shape, including the plain-text rejections of
+/// axum's extractors (a malformed JSON body, a missing query parameter, a body over the limit).
+async fn v1_errors(req: axum::extract::Request, next: axum::middleware::Next) -> Response {
+    let res = next.run(req).await;
+    let status = res.status();
+    if !(status.is_client_error() || status.is_server_error())
+        || res.extensions().get::<ApiError>().is_some()
+    {
+        return res;
+    }
+    let bytes = axum::body::to_bytes(res.into_body(), MAX_REWRITTEN_ERROR)
+        .await
+        .unwrap_or_default();
+    let text = String::from_utf8_lossy(&bytes).trim().to_string();
+    let message = if text.is_empty() {
+        status
+            .canonical_reason()
+            .unwrap_or("request failed")
+            .to_lowercase()
+    } else {
+        text
+    };
+    ApiError::new(status, message).into_response()
+}
+
+/// The deprecated `/api/*` aliases: the same handlers, the flat error body they always had, and
+/// headers that point to the `/api/v1` successor.
+async fn legacy(req: axum::extract::Request, next: axum::middleware::Next) -> Response {
+    // Nested under `/api`, the handler sees the path without that prefix.
+    let successor = format!(
+        "/api/v1{}{}",
+        req.uri().path(),
+        req.uri()
+            .query()
+            .map(|q| format!("?{q}"))
+            .unwrap_or_default()
+    );
+    let res = next.run(req).await;
+    let mut res = match res.extensions().get::<ApiError>() {
+        Some(e) => e.legacy_response(),
+        None => res,
+    };
+    let h = res.headers_mut();
+    h.insert("deprecation", HeaderValue::from_static("true"));
+    if let Ok(v) = HeaderValue::from_str(&format!("<{successor}>; rel=\"successor-version\"")) {
+        h.insert(header::LINK, v);
+    }
+    res
 }
 
 /// Options for [`serve`].
@@ -418,9 +558,8 @@ async fn runs(
         ));
     }
     let query = Query::parse(&p.q).map_err(|e| ApiError {
-        status: StatusCode::BAD_REQUEST,
-        message: e.message.clone(),
         position: Some(e.position),
+        ..ApiError::new(StatusCode::BAD_REQUEST, e.message.clone())
     })?;
     if let Some(sort) = &p.sort {
         if Column::parse(sort).is_none() {
@@ -733,9 +872,13 @@ async fn asset(uri: axum::http::Uri) -> Response {
     };
     let (name, body) = match find(path) {
         Some(b) if !path.is_empty() => (path, b),
-        _ if path.starts_with("api/") => {
+        _ if path.starts_with("api/v1/") || path == "api/v1" => {
             return ApiError::new(StatusCode::NOT_FOUND, format!("no such endpoint: /{path}"))
                 .into_response();
+        }
+        _ if path.starts_with("api/") => {
+            return ApiError::new(StatusCode::NOT_FOUND, format!("no such endpoint: /{path}"))
+                .legacy_response();
         }
         _ if path.starts_with("assets/") => {
             return (StatusCode::NOT_FOUND, "not found").into_response();
