@@ -40,7 +40,7 @@ const failed = runs.find((r) => r.status === "failed") ?? runs[0];
 const cifar = runs.filter((r) => r.experiment === "cifar10-resnet18").map((r) => r.id);
 
 const suites = await api("/api/suites").catch(() => []);
-const v2 = suites.find((x) => x.label === "intent-clf-v2") ?? suites[0];
+const v2 = suites.find((x) => x.label === "intent-clf-v2") ?? suites.find((x) => x.scores.length) ?? suites[0];
 const suiteDetail = v2 ? await api(`/api/suites/${v2.key}`) : null;
 const evalRun = suiteDetail?.selected;
 const evalRuns = suiteDetail?.runs ?? [];
@@ -255,14 +255,17 @@ for (const theme of ["light", "dark"]) {
       await check("Escape closes the item", async () => !(await page.getByRole("dialog").count()));
     } else keys.push({ check: "Tab reaches an eval item", ok: true, skipped: "the eval run has no items" });
     await page.goto(`${BASE}/drift/${v2.key}`, { waitUntil: "networkidle" });
-    // A suite with a single run and no scores draws no chart; there is nothing to move through.
-    if (await page.locator("[role=img]").count()) {
+    // A suite without scores draws no chart (it says why); one with scores must draw it.
+    if (!suiteDetail.scores.length) {
+      keys.push({ check: "Arrow keys select another drift run", ok: true, skipped: "the suite has no scores" });
+      await check("A suite without scores says why", async () => (await page.getByText(/recorded no scores/).count()) > 0);
+    } else if (await page.locator("[role=img]").count()) {
       await page.locator("[role=img]").first().focus();
       const before = new URL(page.url()).searchParams.get("run");
       await page.keyboard.press("ArrowLeft");
       await page.waitForTimeout(400);
       await check("Arrow keys select another drift run", () => new URL(page.url()).searchParams.get("run") !== before);
-    } else keys.push({ check: "Arrow keys select another drift run", ok: true, skipped: "the suite has no chart" });
+    } else await check("A suite with scores draws its chart", () => false);
   }
   report.push({ file: "keyboard", checks: keys });
   await ctx.close();
