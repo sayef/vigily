@@ -120,19 +120,32 @@ def _system_info() -> dict[str, Any]:
         "cpu_count": os.cpu_count(),
         "vigily": __version__,
     }
+    git = _git_info()
+    if git:
+        info["git"] = git
+    return info
+
+
+def _git_info(cwd: str | None = None) -> dict[str, str] | None:
+    """The checkout's branch and commit hash, or None outside a git repository.
+
+    ``--abbrev-ref`` applies to every revision after it, so the commit comes first: the hash, then
+    the branch name (``HEAD`` when detached).
+    """
     try:
-        git = subprocess.run(
-            ["git", "rev-parse", "--abbrev-ref", "HEAD", "HEAD"],
+        out = subprocess.run(
+            ["git", "rev-parse", "HEAD", "--abbrev-ref", "HEAD"],
             capture_output=True,
             text=True,
             timeout=2,
             check=True,
+            cwd=cwd,
         ).stdout.split()
-        if len(git) == 2:
-            info["git"] = {"branch": git[0], "commit": git[1]}
     except (OSError, subprocess.SubprocessError):
-        pass
-    return info
+        return None
+    if len(out) != 2:
+        return None
+    return {"branch": out[1], "commit": out[0]}
 
 
 def _schedule_from_env() -> dict[str, Any] | None:
