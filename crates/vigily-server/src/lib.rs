@@ -61,6 +61,11 @@ use vigily_core::{
 /// How often the catalog is refreshed in the background.
 pub const REFRESH_EVERY: Duration = Duration::from_secs(2);
 
+/// After writes, the shortest time between two commits of buffered points made so that the web
+/// app sees them: often enough for new points to show within a second or two, rarely enough that
+/// a busy engine does not commit a small file per ingest batch.
+pub const WRITE_COMMIT_EVERY: Duration = Duration::from_secs(1);
+
 /// The longest run filter accepted, in bytes.
 pub const MAX_QUERY: usize = 4096;
 
@@ -622,11 +627,21 @@ pub async fn serve(
     monitor::start(state.clone());
     let bg = state.clone();
     background.push(tokio::spawn(async move {
+        let mut last_commit = tokio::time::Instant::now();
         loop {
-            // A write wakes the refresh early, so new runs and points show up at once.
-            tokio::select! {
-                _ = tokio::time::sleep(REFRESH_EVERY) => {}
-                _ = bg.refresh_now.notified() => {}
+            // A write wakes the refresh early. Its points are still buffered in storage, which
+            // the catalog does not see, so commit them first (at most once per
+            // WRITE_COMMIT_EVERY) and new runs and points show up within a second or two.
+            let written = tokio::select! {
+                _ = tokio::time::sleep(REFRESH_EVERY) => false,
+                _ = bg.refresh_now.notified() => true,
+            };
+            if written {
+                tokio::time::sleep_until(last_commit + WRITE_COMMIT_EVERY).await;
+                if let Err(e) = bg.catalog.store().flush().await {
+                    tracing::warn!(error = %e, "committing new writes failed");
+                }
+                last_commit = tokio::time::Instant::now();
             }
             if let Err(e) = bg.catalog.refresh().await {
                 tracing::warn!(error = %e, "catalog refresh failed");
