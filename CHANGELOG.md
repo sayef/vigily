@@ -111,6 +111,11 @@ The first release, published as betas (0.1.0-beta.N) before 0.1.0.
   `Repo.results(run_id)` and `vigily.tracing.export(spans)` in the Python SDK; settings also from
   `VIGILY_URL`, `VIGILY_TOKEN`, `VIGILY_PROJECT`, `VIGILY_OFFLINE`, `VIGILY_EXIT_TIMEOUT`,
   `VIGILY_SPOOL_AFTER`, `VIGILY_SPOOL_MAX_MB` and `VIGILY_BUFFER_MB`.
+- `vigily-engine` platform wheels (`pip install 'vigily[local]'`): the engine binary alone, built by
+  maturin (`bindings = "bin"`) for Linux x86_64 and arm64 (manylinux 2_28), Linux x86_64 with musl
+  and macOS arm64 and x86_64, stripped, versioned like the workspace; the release workflow builds
+  them (and, on pull requests that change how, only builds them) and has a `pypi-engine` job to
+  publish them with trusted publishing.
 - An offline spool: batches the SDK cannot send (after two minutes without the engine, at exit, or
   when the engine falls behind) go to gzip-compressed NDJSON files in `spool/<writer>/` under the
   state directory (0600, written atomically), and are sent in order once the engine answers, by the
@@ -173,6 +178,9 @@ The first release, published as betas (0.1.0-beta.N) before 0.1.0.
   banners, social card and screenshots are regenerated.
 
 ### Fixed
+
+- The release workflow finds the tag of a release pull request merged with a merge commit
+  (release-plz tags the pull request's own commit, the merge's second parent).
 
 - The SDK recorded the branch name as `__system__.git.commit`; it now records the commit hash
   (and the branch as `git.branch`).
