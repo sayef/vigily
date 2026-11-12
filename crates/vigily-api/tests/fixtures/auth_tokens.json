@@ -1,0 +1,26 @@
+{
+  "tokens": [
+    {
+      "id": "3f2a9c41d07b6e15",
+      "name": "nightly-evals",
+      "scopes": [
+        "read",
+        "ingest"
+      ],
+      "created_at": 1700000000000000,
+      "last_used_at": 1700000300000000,
+      "expires_at": null,
+      "created_by": "admin"
+    },
+    {
+      "id": "8b1e0d7c52a4f963",
+      "name": "viewer",
+      "scopes": [
+        "read"
+      ],
+      "created_at": 1700000000000000,
+      "last_used_at": null,
+      "expires_at": 1702592000000000
+    }
+  ]
+}

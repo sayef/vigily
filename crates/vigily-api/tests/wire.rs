@@ -96,3 +96,10 @@ fn writes_keep_their_wire_shape() {
     same::<ingest::IngestReport>("ingest_report");
     same::<evals::CommitDataset>("dataset_commit");
 }
+
+#[test]
+fn auth_keeps_its_wire_shape() {
+    same::<vigily_api::auth::Me>("auth_me");
+    same::<vigily_api::auth::Tokens>("auth_tokens");
+    same::<vigily_api::auth::CreatedToken>("auth_created_token");
+}

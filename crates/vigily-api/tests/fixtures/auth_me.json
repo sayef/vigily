@@ -1,0 +1,10 @@
+{
+  "authenticated": true,
+  "principal": "token:nightly-evals",
+  "scopes": [
+    "read",
+    "ingest"
+  ],
+  "mode": "server",
+  "auth_required": true
+}

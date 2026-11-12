@@ -15,11 +15,13 @@
 //!   answers of their routes.
 //! - [`drift`]: suites and the behaviour- and data-drift verdicts.
 //! - [`traces`]: spans, trace summaries, the payload policy, and the traces list and detail.
+//! - [`auth`]: scopes, who a request is, sessions and access tokens.
 //! - [`ingest`]: the batches of operations a client writes runs with, and their reports.
 //!
 //! The wire format is pinned by golden JSON files in `tests/fixtures`: every answer type reads
 //! its fixture and writes it back unchanged, keys in the same order.
 
+pub mod auth;
 pub mod catalog;
 pub mod chart;
 pub mod drift;
@@ -93,7 +95,8 @@ pub struct Info {
     pub version: String,
     /// [`API_VERSION`].
     pub api_version: String,
-    /// `local`: one user on this machine. `server` arrives with authentication.
+    /// `local`: one user on this machine, with the repository's token. `server`: a shared engine
+    /// with an admin token and scoped tokens.
     pub mode: String,
     /// The route groups this engine serves, such as `runs`, `traces` or `admin`. A client checks
     /// for a capability before using a route that older engines lack.
