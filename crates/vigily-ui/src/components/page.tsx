@@ -47,12 +47,12 @@ export function Figures({ children, label }: { children: React.ReactNode; label?
 export function Figure({ label, value, unit, note, tone }: { label: string; value: React.ReactNode; unit?: React.ReactNode; note?: React.ReactNode; tone?: "bad" | "good" }) {
   return (
     <div className="min-w-0 py-4 pr-4 [&:not(:first-child)]:pl-4 lg:[&:not(:first-child)]:pl-5">
-      <p className="truncate text-[11px] font-bold uppercase tracking-[0.12em] text-faint">{label}</p>
+      <p className="line-clamp-2 text-[11px] font-bold uppercase tracking-[0.12em] text-faint" title={label}>{label}</p>
       <p className={cn("mt-2 mb-1 truncate text-[38px] font-light leading-none tracking-[-0.01em] nums", tone === "bad" && "text-danger", tone === "good" && "text-brand")}>
         {value}
         {unit && <small className="ml-1.5 text-base font-normal tracking-normal text-faint">{unit}</small>}
       </p>
-      {note && <p className="truncate text-sm text-muted-foreground [&_b]:font-bold">{note}</p>}
+      {note && <p className="line-clamp-2 text-sm text-muted-foreground [&_b]:font-bold">{note}</p>}
     </div>
   );
 }

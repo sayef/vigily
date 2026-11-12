@@ -258,7 +258,7 @@ export function CompareRunsPage() {
                       {r ? r.name : <Skeleton className="h-3 w-28" />}
                     </Link>
                     {r && params.differ.length > 0 && (
-                      <span className="block truncate font-mono text-[11.5px] text-faint">
+                      <span className="block truncate font-mono text-[11.5px] text-faint" title={params.differ.map((k) => `${short(k)} ${value(r.params[k])}`).join(", ")}>
                         {params.differ
                           .slice(0, 3)
                           .map((k) => `${short(k)} ${value(r.params[k])}`)

@@ -88,6 +88,14 @@ The first release, published as betas (0.1.0-beta.N) before 0.1.0.
 - Linear-time query parsing (filters over 4 KiB are refused), no step overflow after the largest
   step, alert acknowledgements kept during webhook delivery, impossible cron expressions rejected,
   interrupted schedule runs marked as such.
+- Runs table: each loss sparkline spans the run's own steps (still on one scale per experiment), so
+  a live run is no longer squeezed into the first pixels by a long finished run; a training run
+  without the metric says "No points yet" or "Not logged" instead of loading forever.
+- Drift: a suite whose eval runs recorded no scores explains why instead of showing an endless
+  placeholder, and the demo's evaluations are real `evaluate()` runs that form one scored suite.
+- Web app polish: the sidebar footer keeps pre-release versions whole, header facts no longer split
+  around inline code, names and states no longer break at hyphens in narrow tables, figure labels
+  and notes wrap instead of truncating on phones, and the trace filters fit two per row on phones.
 
 - `vigily-core`: runs, parameters and metric series behind a storage trait, with a kv0 and an
   in-memory backend; an incrementally refreshed catalog with per-series statistics; a run query

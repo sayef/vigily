@@ -583,7 +583,7 @@ function Cell({ c, run, letter, best }: { c: ColumnDef; run: RunRow; letter: str
   const v = c.cell(run);
   if (c.id === "run:experiment" && run.experiment)
     return (
-      <Link to={`/?q=${encodeURIComponent(`exp="${run.experiment}"`)}`} className="block truncate py-1 text-muted-foreground hover:text-foreground hover:underline">
+      <Link to={`/?q=${encodeURIComponent(`exp="${run.experiment}"`)}`} className="block truncate py-1 text-muted-foreground hover:text-foreground hover:underline" title={run.experiment ?? undefined}>
         {run.experiment}
       </Link>
     );

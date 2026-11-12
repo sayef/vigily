@@ -65,7 +65,7 @@ export function ExperimentsPage() {
               const metrics = e.metrics.filter((m) => !isSystem(m));
               return (
                 <tr key={e.name || "(none)"} className="hover:bg-muted">
-                  <th scope="row" className="h-11 border-b px-3 text-left font-medium">
+                  <th scope="row" className="h-11 whitespace-nowrap border-b px-3 text-left font-medium">
                     <Link to={`/?q=${encodeURIComponent(runsOf(e))}`} className="inline-flex min-h-8 items-center hover:underline">
                       {e.name || <span className="text-muted-foreground">No experiment</span>}
                     </Link>
@@ -79,7 +79,7 @@ export function ExperimentsPage() {
                       {e.aborted > 0 && <Count status="aborted" n={e.aborted} />}
                     </span>
                   </td>
-                  <td className="h-11 border-b px-3 text-muted-foreground">
+                  <td className="h-11 whitespace-nowrap border-b px-3 text-muted-foreground">
                     {e.last_created && (
                       <Tooltip content={utc(e.last_created)}>
                         <span>{ago(e.last_created)}</span>
@@ -110,7 +110,7 @@ export function ExperimentsPage() {
 
 function Count({ status, n }: { status: "running" | "finished" | "failed" | "aborted"; n: number }) {
   return (
-    <span className="inline-flex items-center gap-1">
+    <span className="inline-flex items-center gap-1 whitespace-nowrap">
       <StatusBadge status={status} iconOnly />
       {n} {status}
     </span>
