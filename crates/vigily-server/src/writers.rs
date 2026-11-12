@@ -178,6 +178,13 @@ impl WriterRegistry {
         }
     }
 
+    /// Notes a heartbeat written now (an explicit one), so the next implicit one is two minutes away.
+    pub fn heartbeat_now(&self, run_id: &str) {
+        if let Some(s) = self.slots.lock().get_mut(run_id) {
+            s.last_heartbeat = Instant::now();
+        }
+    }
+
     /// Closes writers idle for [`WRITER_IDLE`], at most once a minute.
     fn sweep(&self, now: Instant) {
         {

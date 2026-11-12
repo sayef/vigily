@@ -235,8 +235,8 @@ def test_evaluate_links_traces_to_items(collector, tmp_path):
     (span,) = collector.spans
     assert span["run_id"] == res.run_id
     assert span["eval_item"] == "q1"
-    rows = vigily.Repo(repo)._repo.results(res.run_id)
-    assert json.loads(rows)[0]["trace_id"] == span["trace_id"]
+    rows = vigily.Repo(repo).results(res.run_id)
+    assert rows[0]["trace_id"] == span["trace_id"]
 
 
 def test_spans_are_sent_on_normal_exit(tmp_path):

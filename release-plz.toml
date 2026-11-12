@@ -4,8 +4,7 @@
 # Release only when a release pull request is merged, not on every push to main.
 release_always = false
 git_only = true
-# Off until kv0 0.1.0-beta.1 is on crates.io. Then set `publish = true` (vigily-py keeps
-# `publish = false` in its Cargo.toml; it ships as a wheel), remove `git_only`, and pass the existing
+# Off until kv0 0.1.0-beta.1 is on crates.io. Then set `publish = true`, remove `git_only`, and pass the existing
 # CARGO_REGISTRY_TOKEN secret to the `release` step in release-plz.yml. The kv0 requirement in
 # Cargo.toml stays the exact pre-release version. See CONTRIBUTING.md, Releasing.
 publish = false
@@ -21,7 +20,7 @@ pr_labels = ["release"]
 name = "vigily-cli"
 changelog_update = true
 changelog_path = "CHANGELOG.md"
-changelog_include = ["vigily-api", "vigily-core", "vigily-server", "vigily-ui", "vigily-py"]
+changelog_include = ["vigily-api", "vigily-core", "vigily-server", "vigily-ui"]
 git_tag_enable = true
 git_tag_name = "v{{ version }}"
 git_release_enable = true

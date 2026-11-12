@@ -452,3 +452,112 @@ async fn status_names_the_engine_and_read_commands_need_a_repository() {
     assert_eq!(bin.status.code(), Some(1));
     assert!(text(&bin.stdout).starts_with("no repository at "));
 }
+
+/// Writes a spool file as the Python SDK does: gzip-compressed lines.
+fn spool_file(dir: &Path, name: &str, lines: &[Value]) {
+    use std::io::Write as _;
+    let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    for l in lines {
+        writeln!(gz, "{l}").unwrap();
+    }
+    std::fs::write(dir.join(name), gz.finish().unwrap()).unwrap();
+}
+
+#[tokio::test]
+async fn sync_sends_the_spool_in_order_once() {
+    let dir = tempfile::tempdir().unwrap();
+    let c = engine(dir.path(), Config::default()).await;
+    let root = dir.path().join("spool");
+    let run = "0190a0b0c0d07e0f8a9b0c1d2e3f4a5b";
+    let gone = "0190a0b0c0d07e0f8a9b0c1d2e3f4a5c";
+    let w = root.join("0190a0b0c0d07e0f8a9b0c1d2e3f4a70");
+    std::fs::create_dir_all(&w).unwrap();
+    std::fs::write(
+        w.join("meta.json"),
+        json!({"version": 1, "writer": "w", "pid": 1, "url": c.base(), "repo": null}).to_string(),
+    )
+    .unwrap();
+    let points = |from: i64| {
+        json!({"op": "points", "run_id": run, "name": "loss",
+               "steps": [from, from + 1], "values": [0.5, "NaN"], "timestamps": [1, 2]})
+    };
+    spool_file(
+        &w,
+        "000000000001-b.ndjson.gz",
+        &[json!({"writer": "w", "seq": 1, "ops": [
+            {"op": "create", "id": run, "name": "spooled", "created_at": 1_700_000_000_000_000i64},
+            points(0)]})],
+    );
+    // A run nobody created stands for one deleted meanwhile: its operations are left out.
+    spool_file(
+        &w,
+        "000000000002-b.ndjson.gz",
+        &[json!({"writer": "w", "seq": 2, "ops": [
+            points(2),
+            {"op": "params", "run_id": gone, "params": {"a": 1}},
+            {"op": "finish", "run_id": run, "status": "finished", "ended_at": 1_700_000_060_000_000i64}]})],
+    );
+    spool_file(
+        &w,
+        "000000000003-s.ndjson.gz",
+        &[
+            json!({"spans": [{"trace_id": "t1", "span_id": "s1", "name": "answer",
+                            "start_time": 1, "end_time": 2, "run_id": run}]}),
+        ],
+    );
+    // Another engine's spool is listed, not sent.
+    let other = root.join("other");
+    std::fs::create_dir_all(&other).unwrap();
+    std::fs::write(
+        other.join("meta.json"),
+        json!({"version": 1, "writer": "x", "url": "http://elsewhere:1", "repo": null}).to_string(),
+    )
+    .unwrap();
+    spool_file(
+        &other,
+        "000000000001-b.ndjson.gz",
+        &[json!({"writer": "x", "seq": 1, "ops": []})],
+    );
+
+    let target = vigily_cli::sync::Target::Url(c.base().to_string());
+    let (mut out, mut err) = (Vec::new(), Vec::new());
+    let code = vigily_cli::sync::sync(&c, &target, &root, false, &mut out, &mut err)
+        .await
+        .unwrap();
+    ok(code);
+    let (out, err) = (text(&out), text(&err));
+    assert!(
+        out.contains("Sent 2 batches (4 points) and 1 spans from 1 spool directory"),
+        "{out}"
+    );
+    assert!(out.contains("http://elsewhere:1"), "{out}");
+    assert!(err.contains(&format!("run {gone} was deleted")), "{err}");
+    assert!(!w.exists(), "a sent directory is removed");
+    assert!(other.join("000000000001-b.ndjson.gz").exists());
+    c.flush().await.unwrap();
+    let p = c
+        .run_points(
+            run,
+            &vigily_api::runs::PointsQuery {
+                name: "loss".into(),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(p.steps, vec![0, 1, 2, 3]);
+    assert!(p.values[1].is_nan());
+    assert_eq!(
+        c.run(run).await.unwrap().row.run.status.as_str(),
+        "finished"
+    );
+
+    // Again: nothing left for this engine.
+    let (mut out, mut err) = (Vec::new(), Vec::new());
+    ok(
+        vigily_cli::sync::sync(&c, &target, &root, false, &mut out, &mut err)
+            .await
+            .unwrap(),
+    );
+    assert!(text(&out).contains("Sent 0 batches"));
+}

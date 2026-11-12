@@ -84,11 +84,12 @@ and `protoc`:
 git clone https://github.com/sayef/vigily && cd vigily
 (cd crates/vigily-ui && npm ci && npm run build)      # the binary embeds the web app
 cargo build --release -p vigily-cli -p vigily-server   # vigily and vigily-engine
-uv sync --no-install-project && uv run --no-sync maturin develop --release
+uv sync                                               # the Python SDK, pure Python
+export PATH="$PWD/target/release:$PATH"               # the SDK starts vigily-engine from PATH
 
 uv run --no-sync python examples/demo.py              # synthetic training runs
 uv run --no-sync python examples/eval_demo.py         # 30 synthetic nights of evaluations
-target/release/vigily up --config examples/vigily.toml   # open the link it prints
+vigily stop && vigily up --config examples/vigily.toml   # open the link it prints
 ```
 
 ### Run with Docker

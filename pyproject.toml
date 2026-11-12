@@ -1,6 +1,6 @@
 [build-system]
-requires = ["maturin>=1.8,<2"]
-build-backend = "maturin"
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
 
 [project]
 name = "vigily"
@@ -17,10 +17,11 @@ classifiers = [
     "Operating System :: MacOS",
     "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3 :: Only",
-    "Programming Language :: Rust",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Typing :: Typed",
 ]
+# No runtime dependencies: the SDK speaks HTTP with the standard library.
+dependencies = []
 dynamic = ["version"]
 
 [project.urls]
@@ -29,16 +30,21 @@ Issues = "https://github.com/sayef/vigily/issues"
 Changelog = "https://github.com/sayef/vigily/blob/main/CHANGELOG.md"
 
 [dependency-groups]
-dev = ["pytest>=8", "maturin>=1.8,<2", "ruff>=0.6"]
+dev = ["pytest>=8", "ruff>=0.6"]
 
-[tool.maturin]
-manifest-path = "crates/vigily-py/Cargo.toml"
-python-source = "crates/vigily-py/python"
-module-name = "vigily._native"
-features = ["pyo3/extension-module"]
+# The version is the workspace's (Cargo.toml): 0.1.0-beta.3 there is 0.1.0b3 here.
+[tool.hatch.version]
+path = "Cargo.toml"
+pattern = '(?m)^\[workspace\.package\]\s*\nversion = "(?P<version>[^"]+)"'
+
+[tool.hatch.build.targets.wheel]
+packages = ["python/vigily"]
+
+[tool.hatch.build.targets.sdist]
+include = ["python/vigily", "python/tests", "README.md", "LICENSE", "CHANGELOG.md", "Cargo.toml"]
 
 [tool.pytest.ini_options]
-testpaths = ["crates/vigily-py/tests"]
+testpaths = ["python/tests"]
 
 [tool.ruff]
 line-length = 110

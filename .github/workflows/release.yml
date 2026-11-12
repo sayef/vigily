@@ -1,14 +1,14 @@
 name: Release
 
 # Releases a version tag in this order:
-#   1. build the binaries and wheels, and attach them to the tag's release, published as a pre-release
-#      (release-plz creates it as a draft; a tag pushed by hand gets one here);
+#   1. build the binaries and the Python package, and attach them to the tag's release, published as
+#      a pre-release (release-plz creates it as a draft; a tag pushed by hand gets one here);
 #   2. push the image to ghcr.io with its version tags;
 #   3. install the release with scripts/install.sh and run it on older distributions;
 #   4. only when all of that passed, mark the release as the latest and tag the image `latest`.
-# A failure leaves a pre-release that `latest` downloads never see. Once the binaries and wheels
-# built, the wheels and the sdist go to PyPI (pre-release tags too: v0.1.0-beta.1 is 0.1.0b1, which
-# pip installs only when asked). Nothing goes to crates.io yet (see release-plz.toml).
+# A failure leaves a pre-release that `latest` downloads never see. Once the binaries and the package
+# built, the SDK's wheel (pure Python) and sdist go to PyPI (pre-release tags too: v0.1.0-beta.1 is
+# 0.1.0b1, which pip installs only when asked). Nothing goes to crates.io yet (see release-plz.toml).
 # Nothing runs until the RELEASE_ENABLED repository variable is `true` (see CONTRIBUTING.md).
 on:
   push:
@@ -135,38 +135,8 @@ jobs:
           name: vigily-${{ matrix.target }}
           path: vigily-${{ matrix.target }}.tar.gz*
 
-  wheels:
-    needs: tag
-    if: needs.tag.outputs.tag != ''
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest]
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ needs.tag.outputs.tag }}
-          persist-credentials: false
-          path: vigily
-      - if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
-      - if: runner.os == 'macOS'
-        run: brew install protobuf
-      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
-        with:
-          toolchain: stable
-      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
-        with:
-          enable-cache: false
-      - run: uvx maturin build --release --out dist
-        working-directory: vigily
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: wheels-${{ matrix.os }}
-          path: vigily/dist
-
-  sdist:
+  sdk:
+    # The Python SDK: one pure-Python wheel (py3-none-any) and its sdist.
     needs: tag
     if: needs.tag.outputs.tag != ''
     runs-on: ubuntu-latest
@@ -178,16 +148,21 @@ jobs:
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           enable-cache: false
-      - run: uvx maturin sdist --out dist
+      - run: uv build --out-dir dist
+      - name: The wheel is pure and small
+        run: |
+          ls -l dist
+          wheel=$(ls dist/*-py3-none-any.whl)
+          test "$(stat -c %s "$wheel")" -lt 204800
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: wheels-sdist
+          name: wheels-sdk
           path: dist
 
   # Trusted publishing: PyPI accepts this workflow file in the `pypi` environment (see
   # CONTRIBUTING.md); there is no token.
   pypi:
-    needs: [tag, binary, wheels, sdist]
+    needs: [tag, binary, sdk]
     if: >-
       github.repository_owner == 'sayef' && vars.RELEASE_ENABLED == 'true'
       && needs.tag.outputs.tag != ''
@@ -206,7 +181,7 @@ jobs:
           skip-existing: true
 
   publish:
-    needs: [tag, binary, wheels, sdist]
+    needs: [tag, binary, sdk]
     runs-on: ubuntu-latest
     permissions:
       contents: write

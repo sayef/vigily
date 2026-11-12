@@ -3,11 +3,9 @@
 A tour of the code. The reasons behind the choices are in [DESIGN.md](https://github.com/sayef/vigily/blob/main/DESIGN.md).
 
 ```text
-training script ── vigily (Python) ── vigily-py (pyo3) ──────────────┐
-                                                                        ├── vigily-core ── kv0 ── Lance datasets
-browser ── vigily-ui (embedded) ──┐                                    │
-                                   ├── HTTP ── vigily-server (engine) ──┘
-vigily (command line, vigily-cli) ─┘
+training script ── vigily (Python, python/vigily) ─┐
+browser ── vigily-ui (embedded) ───────────────────┼── HTTP ── vigily-server (engine) ── vigily-core ── kv0 ── Lance datasets
+vigily (command line, vigily-cli) ─────────────────┘
 ```
 
 ## vigily-api
@@ -187,12 +185,27 @@ commands, and the binary, against engines in the test process.
 
 `build.rs` embeds `dist/` into the binary; build the app before cargo.
 
-## vigily-py
+## The Python SDK (python/vigily)
 
-`src/lib.rs` is the native module `vigily._native` (`Repo`, `RunHandle`); values cross as JSON
-text. `python/vigily/__init__.py` is the public API: `Run` (parameters by item assignment, `track`,
-metadata properties, `finish`, context manager, finishing at exit) and `Repo` (reading back). One
-native repository handle is shared per location and process.
+Pure Python, standard library only, one `py3-none-any` wheel built with hatchling.
+
+| Module | What it holds |
+|---|---|
+| `__init__.py` | The public API: `Run` (parameters by item assignment, `track`, metadata properties, `finish`, context manager, finishing at exit), `Repo` (reads through `/api/v1`), `configure`, `flush` |
+| `_config.py` | Settings from `configure()` and the environment |
+| `_engine.py` | `vigily_api::local` in Python: state directory, canonical location, key, lock probe, `vigily-engine --detach` |
+| `_http.py` | `http.client` with a kept-alive connection per thread, gzip, the engine's errors as Python exceptions |
+| `_ids.py` | UUIDv7 run and writer ids |
+| `_sender.py` | One sender per engine: the operation log with points in columns, batches, retries, backpressure, the spool, spans and the payload policy, exit and fork |
+| `_spool.py` | The spool's files (shared with `vigily sync` in `crates/vigily-cli/src/sync.rs`) |
+| `datasets.py`, `evaluation.py`, `evaluators.py`, `tracing.py` | Datasets, `evaluate()`, evaluators, spans |
+
+A `Run` queues operations (`create`, `params`, `points`, `update`, `heartbeat`, `results`,
+`features`, `finish`) in its engine's sender; the sender's thread cuts the log into batches and
+posts them to `/api/v1/ingest` with `Idempotency-Key: <writer>:<seq>`. Points of one series are
+appended to a segment's columns until another operation of the run ends it, so the engine applies
+everything in the order it was logged. The tests (`python/tests`) start real engines from
+`target/debug/vigily-engine` in a temporary state directory.
 
 ## Tests
 

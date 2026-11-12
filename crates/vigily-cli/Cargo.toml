@@ -23,6 +23,9 @@ path = "src/lib.rs"
 vigily-api = { workspace = true, features = ["client"] }
 anyhow.workspace = true
 clap.workspace = true
+# `vigily sync` reads the Python SDK's spool: gzip-compressed NDJSON.
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
 

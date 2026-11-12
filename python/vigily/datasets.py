@@ -13,7 +13,8 @@ from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
-from vigily import _jsonable, _open
+from vigily import _jsonable, _quote, _sender
+from vigily._ids import uuid7_hex
 
 
 @dataclass(frozen=True)
@@ -70,9 +71,20 @@ class Dataset:
     def __init__(
         self, name: str, version: int | None = None, *, repo: str | os.PathLike[str] | None = None
     ) -> None:
-        self._repo = _open(repo)
+        self._conn = _sender.connection(repo)
         self._repo_arg = repo
-        self._meta: dict[str, Any] = json.loads(self._repo.dataset_version(name, version))
+        doc = self._conn.call(
+            "GET", f"/api/v1/datasets/{_quote(name)}", query={"version": version, "limit": 1}
+        )
+        v = doc["version"]
+        self._meta: dict[str, Any] = {
+            "name": doc["info"]["name"],
+            "version": v["version"],
+            "digest": v["digest"],
+            "note": v.get("note"),
+            "changes": v["changes"],
+            "items": v["items"],
+        }
         self._items: list[Item] | None = None
 
     @property
@@ -100,7 +112,10 @@ class Dataset:
     @property
     def items(self) -> list[Item]:
         if self._items is None:
-            rows = json.loads(self._repo.dataset_items(self.name, self.version))
+            data = self._conn.call(
+                "GET", f"/api/v1/datasets/{_quote(self.name)}/versions/{self.version}/items", raw=True
+            )
+            rows = [json.loads(line) for line in data.splitlines() if line.strip()]
             self._items = [
                 Item(r["id"], r["input"], r["expected"], r["metadata"] or {}, r["hash"]) for r in rows
             ]
@@ -110,15 +125,15 @@ class Dataset:
         return iter(self.items)
 
     def __len__(self) -> int:
-        return len(self._meta["items"])
+        return int(self._meta["items"])
 
     def __repr__(self) -> str:
         return f"<vigily.Dataset {self.name} v{self.version}, {len(self)} items>"
 
     def versions(self) -> list[dict[str, Any]]:
         """Every version: number, time, note, digest and changes."""
-        rows = json.loads(self._repo.dataset_versions(self.name))
-        return [{k: v for k, v in r.items() if k != "items"} | {"items": len(r["items"])} for r in rows]
+        rows = self._conn.call("GET", f"/api/v1/datasets/{_quote(self.name)}/versions")
+        return sorted(rows, key=lambda r: r["version"])
 
     def add(self, items: Iterable[Any], *, note: str | None = None) -> Dataset:
         """Adds items, or replaces items with the same id, as a new version."""
@@ -126,9 +141,19 @@ class Dataset:
 
     @staticmethod
     def _commit(name, items, mode, note, description, source, repo) -> Dataset:
-        h = _open(repo)
-        payload = json.dumps([_item_json(i) for i in items])
-        meta = json.loads(h.commit_dataset(name, payload, mode, note, description, source))
+        conn = _sender.connection(repo)
+        body: dict[str, Any] = {"items": [_item_json(i) for i in items], "mode": mode}
+        for k, v in (("note", note), ("description", description), ("source", source)):
+            if v is not None:
+                body[k] = v
+        # One key per commit, reused by the retries, so a retried commit makes one version.
+        meta = conn.call(
+            "POST",
+            f"/api/v1/datasets/{_quote(name)}/versions",
+            body,
+            headers={"idempotency-key": f"dataset-{uuid7_hex()}"},
+            timeout=600.0,
+        )
         return Dataset(name, meta["version"], repo=repo)
 
     @classmethod
@@ -198,4 +223,4 @@ def _from_row(r: Mapping[str, Any], input: str, expected: str, id: str | None) -
 
 def datasets(repo: str | os.PathLike[str] | None = None) -> list[dict[str, Any]]:
     """Every dataset in the repository: name, description, latest version, item count."""
-    return json.loads(_open(repo).datasets())
+    return _sender.connection(repo).call("GET", "/api/v1/datasets")

@@ -1,8 +1,9 @@
 """Backfill 30 nights of evaluations to try vigily's datasets, evaluations, drift and alerts.
 
-    uv run --no-sync python examples/eval_demo.py                                   # writes ./.vigily
-    vigily schedules --config examples/vigily.toml run nightly-intents          # one real scheduled run
-    vigily up --config examples/vigily.toml
+    uv run --no-sync python examples/eval_demo.py    # writes ./.vigily through its engine
+    vigily stop                                      # the engine the script started
+    vigily up --config examples/vigily.toml          # serve it with the demo's schedules
+    vigily schedules run nightly-intents             # one real scheduled run (another terminal)
 
 Everything is synthetic (examples/evals/support.py): a labelled dataset of support messages in
 three languages, two keyword "classifiers" as targets, and a nightly evaluation of both over the

@@ -106,7 +106,7 @@ def test_evaluate_records_items_scores_and_features(repo, monkeypatch):
     assert [e["name"] for e in params["__eval__"]["evaluators"]] == ["exact_match", "short"]
     assert r.metric(result.run_id, "eval/exact_match")["values"] == [pytest.approx(2 / 3)]
 
-    rows = json.loads(r._repo.results(result.run_id))
+    rows = r.results(result.run_id)
     by_id = {x["item_id"]: x for x in rows}
     assert by_id["q2"]["error"].startswith("RuntimeError: model timeout")
     assert by_id["q1"]["scores"][0]["evaluator_version"] == "vigily/exact_match@1"
@@ -140,7 +140,7 @@ def test_results_are_stored_before_the_run_is_finished(repo):
         r = Repo(repo)
         [info] = [x for x in r.runs() if x["id"] == run_id]
         assert info["status"] == "finished"
-        assert len(json.loads(r._repo.results(run_id))) == 50
+        assert len(r.results(run_id)) == 50
     finally:
         p.kill()
 
@@ -153,7 +153,7 @@ def test_demo_evaluations_form_one_scored_drift_suite(repo):
     import pathlib
     import time
 
-    path = pathlib.Path(__file__).parents[3] / "examples" / "demo.py"
+    path = pathlib.Path(__file__).parents[2] / "examples" / "demo.py"
     spec = importlib.util.spec_from_file_location("vigily_demo", path)
     demo = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(demo)

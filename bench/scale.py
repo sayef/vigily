@@ -1,7 +1,8 @@
 """Log many synthetic runs to measure vigily at scale.
 
 uv run --no-sync python bench/scale.py --runs 2000 --points 2000 --repo /tmp/vigily-scale
-vigily up --repo /tmp/vigily-scale --port 7601     # then time the API (bench/scale.sh)
+vigily stop --repo /tmp/vigily-scale         # the engine the SDK started for it
+bash bench/scale.sh /tmp/vigily-scale        # serves it on port 7601 and times the API
 """
 
 from __future__ import annotations

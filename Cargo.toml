@@ -6,15 +6,6 @@ members = [
     "crates/vigily-server",
     "crates/vigily-ui",
     "crates/vigily-cli",
-    "crates/vigily-py",
-]
-# The Python extension is built with maturin (`uv run maturin develop`).
-default-members = [
-    "crates/vigily-api",
-    "crates/vigily-core",
-    "crates/vigily-server",
-    "crates/vigily-ui",
-    "crates/vigily-cli",
 ]
 
 [workspace.package]

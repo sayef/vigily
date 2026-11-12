@@ -1,4 +1,4 @@
-# vigily server configuration for the evaluation demo (examples/eval_demo.py).
+# vigily engine configuration for the demos (examples/eval_demo.py, examples/demo.py).
 #
 #   vigily up --config examples/vigily.toml
 #
@@ -38,3 +38,22 @@ missed = "skip"
 [drift]
 alpha = 0.01
 min_effect = 0.02
+
+# Token prices for the synthetic models of examples/demo.py's traces (per million tokens; not
+# real prices).
+[tracing]
+payloads = "truncated"
+currency = "EUR"
+
+[tracing.prices."example-large"]
+input = 2.5
+output = 10.0
+cached_input = 1.25
+
+[tracing.prices."example-small"]
+input = 0.15
+output = 0.6
+
+[tracing.prices."example-embed"]
+input = 0.02
+output = 0.0

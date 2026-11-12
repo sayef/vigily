@@ -10,6 +10,6 @@
 
 - [ ] `cargo fmt --all` and `cargo clippy --all-targets -- -D warnings` are clean; `cargo nextest run` passes
 - [ ] `npm run lint`, `npm run typecheck` and `npm run build` pass in `crates/vigily-ui`
-- [ ] `uv run --no-sync pytest` passes after `uv run --no-sync maturin develop`
+- [ ] `uv run --no-sync pytest` passes (it starts engines from `target/debug/vigily-engine`)
 - [ ] UI changes follow `brand/DESIGN.md` and were checked in a browser at desktop and phone widths
 - [ ] README, docs and CHANGELOG are updated if commands, the API or the SDK changed

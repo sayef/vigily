@@ -7,6 +7,7 @@
 //! tests run them against an engine in the same process.
 
 pub mod render;
+pub mod sync;
 
 use std::io::Write;
 use std::path::PathBuf;
@@ -67,6 +68,13 @@ pub enum Command {
     },
     /// Print VIGILY_URL and VIGILY_TOKEN for the repository's engine, as shell exports.
     Env,
+    /// Send what the Python SDK left in its offline spool to this engine (--url, or the
+    /// repository's). Batches for other engines are listed, not sent.
+    Sync {
+        /// Only list the spool directories that would be sent.
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// List runs, newest first; `vigily runs purge` erases deleted runs from storage.
     #[command(args_conflicts_with_subcommands = true)]
     Runs {
@@ -258,12 +266,13 @@ pub async fn run(cli: Cli) -> Result<ExitCode> {
         Command::Up(args) => return up(&cli.repo, args),
         Command::Status => return status(&cli, out).await,
         Command::Stop => return stop(&cli, out).await,
+        Command::Sync { dry_run } => return sync_command(&cli, out, err, *dry_run).await,
         _ => {}
     }
     let start = exists(&cli.repo) || creates(&cli.command);
     let (c, _) = connect(&cli, start).await?;
     let code = match &cli.command {
-        Command::Up(_) | Command::Status | Command::Stop => unreachable!(),
+        Command::Up(_) | Command::Status | Command::Stop | Command::Sync { .. } => unreachable!(),
         Command::Open { no_browser } => open(&c, out, !no_browser).await,
         Command::Env => env(&c, out),
         Command::Runs {
@@ -299,6 +308,38 @@ pub async fn run(cli: Cli) -> Result<ExitCode> {
         } => rotate_token(&c, out).await,
     };
     code
+}
+
+/// `vigily sync`: connects (starting the repository's engine if needed) only when the spool holds
+/// something for it.
+async fn sync_command(
+    cli: &Cli,
+    out: &mut dyn Write,
+    err: &mut dyn Write,
+    dry_run: bool,
+) -> Result<ExitCode> {
+    let target = match cli.url.as_deref().filter(|u| !u.is_empty()) {
+        Some(u) => sync::Target::Url(u.trim_end_matches('/').to_string()),
+        None => sync::Target::Repo(local::canonical_location(&cli.repo)),
+    };
+    let Some(root) = sync::spool_root() else {
+        bail!("no home directory for vigily's state; set VIGILY_STATE_DIR");
+    };
+    if !sync::has_work(&root, &target) {
+        writeln!(out, "Nothing in the spool for this engine.")?;
+        return sync::sync(
+            &Client::new("http://127.0.0.1:0", None),
+            &target,
+            &root,
+            true,
+            out,
+            err,
+        )
+        .await
+        .map(|_| ExitCode::SUCCESS);
+    }
+    let (c, _) = connect(cli, true).await?;
+    sync::sync(&c, &target, &root, dry_run, out, err).await
 }
 
 /// Runs `vigily-engine` in the foreground with the flags of `vigily up`; on Unix it replaces this

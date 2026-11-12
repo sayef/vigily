@@ -21,7 +21,6 @@ the runs table, the metric explorer and drift detection all see it.
 
 from __future__ import annotations
 
-import json
 import math
 import random
 import time
@@ -31,7 +30,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Any
 
-from vigily import Run, __version__, _jsonable, tracing
+from vigily import Run, __version__, _config, _jsonable, _sender, tracing
 from vigily.datasets import Dataset, Item
 from vigily.evaluators import Evaluator, Score
 
@@ -168,9 +167,8 @@ def evaluate(
     try:
         with ThreadPoolExecutor(max_workers=max(1, concurrency)) as pool:
             results = list(pool.map(one, items))
-        native = run._repo
         for i in range(0, len(results), 500):
-            native.put_results(json.dumps(results[i : i + 500]))
+            run._h.put_results(results[i : i + 500])
 
         sums: dict[str, list[float]] = {n: [] for n in names}
         failures: list[str] = []
@@ -207,13 +205,15 @@ def evaluate(
             log_features(run, (features(it) for it in items))
         elif features is not None:
             log_features(run, features)
-        # Results and features must be in storage before the run is marked finished: monitors and
-        # other processes treat a finished eval run as complete.
-        native.flush()
+        # Results and features go before the finish in the run's operation log, and the engine
+        # stores them before it marks the run finished: monitors and other processes treat a
+        # finished eval run as complete.
         run.finish("finished", ended_at=stamp)
     except BaseException:
         run.finish("failed")
         raise
+    # Other processes see the finished run once this returns (or it is in the spool).
+    _sender.flush_connection(run._conn, _config.exit_timeout())
     return EvalResult(run.id, dataset.name, dataset.version, n, errors, means, failures)
 
 
@@ -231,5 +231,4 @@ def log_features(run: Run, rows: Iterable[Mapping[str, Any]]) -> None:
             values = rng.sample(values, FEATURE_SAMPLE)
         samples.append({"run_id": run.id, "feature": k, "values": values})
     if samples:
-        run._repo.put_features(json.dumps(samples))
-        run._repo.flush()
+        run._h.put_features(samples)

@@ -294,8 +294,11 @@ async fn apply(s: &AppState, batch: IngestBatch) -> Result<IngestReport, ApiErro
                     heartbeat(s, &run_id, &*w)?;
                 }
                 Op::Heartbeat { run_id } => {
+                    // Clients send these on their own schedule (the Python SDK every two
+                    // minutes): each is stored, and restarts the implicit heartbeat's clock.
                     let w = writer(s, &run_id).await?;
-                    heartbeat(s, &run_id, &*w)?;
+                    s.writes.writers.heartbeat_now(&run_id);
+                    w.heartbeat().map_err(|e| run_error(&run_id, e))?;
                 }
                 Op::Finish {
                     run_id,
@@ -380,6 +383,9 @@ async fn resume(
 ) -> Result<Json<ResumedRun>, ApiError> {
     crate::from_a_client_as(&headers, "run writes", &["application/json", ""])?;
     let w = writer(&s, &id).await?;
+    // A run this engine is still writing (created a moment ago, or written by another process)
+    // is in the catalog once its buffered rows are.
+    w.flush().await.map_err(|e| run_error(&id, e))?;
     let snap = s.catalog.refresh().await?;
     let e = snap.get(&id).ok_or_else(|| run_deleted(&id))?;
     Ok(Json(ResumedRun {

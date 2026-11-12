@@ -1,4 +1,4 @@
-"""LLM tracing: spans with timing, status, model, token usage and payloads, sent to ``vigily up``.
+"""LLM tracing: spans with timing, status, model, token usage and payloads, sent to the engine.
 
 .. code-block:: python
 
@@ -16,37 +16,35 @@
             llm.set_usage(input_tokens=812, output_tokens=95, cached_tokens=512)
 
 Spans nest through :mod:`contextvars`, so nesting follows ``asyncio`` tasks and stays correct when
-coroutines interleave. A span ends when its block exits; it is then queued and a background thread
-sends queued spans to the server in batches (``POST /api/v1/traces/ingest``), so tracing never blocks
-the traced code on the network. Queued spans are sent when the interpreter exits normally; call
-:func:`flush` to send them earlier (for example before ``os._exit``).
+coroutines interleave. A span ends when its block exits; it is then queued, and the background
+thread that sends runs sends queued spans in batches (``POST /api/v1/traces/ingest``), so tracing
+never blocks the traced code on the network. Queued spans are sent when the interpreter exits
+normally; call :func:`flush` to send them earlier (for example before ``os._exit``).
 
-The server is ``http://127.0.0.1:7600`` unless :func:`configure` or ``VIGILY_URL`` names another;
-spans are sent with the token from :func:`configure` or ``VIGILY_TOKEN`` (the server's local
-token, or an access token with the ``ingest`` scope). ``VIGILY_TRACING=off`` turns tracing off.
-The server decides what is stored of inputs and outputs (full, truncated to 4 KiB per field by
-default, or metadata only) and computes cost from its price table; :func:`set_redactor` changes or
-drops spans before they leave the process.
+Spans go to the engine :func:`configure` or ``VIGILY_URL`` names, else to the engine of the span's
+run, else to the repository's engine (found or started as for runs), with the token from
+:func:`configure` or ``VIGILY_TOKEN`` (a local engine's own token otherwise; a team server's token
+needs the ``read`` and ``ingest`` scopes). ``VIGILY_TRACING=off`` turns tracing off. The engine
+decides what is stored of inputs and outputs (full, truncated to 4 KiB per field by default, or
+metadata only) and computes cost from its price table. Its payload policy is applied before a span
+leaves the process (or goes to the spool), and :func:`set_redactor` changes or drops spans before
+they are queued.
 """
 
 from __future__ import annotations
 
-import atexit
 import contextlib
 import contextvars
+import copy
 import functools
 import inspect
-import json
 import math
 import os
-import queue
 import re
 import secrets
 import sys
 import threading
 import time
-import urllib.error
-import urllib.request
 from collections.abc import Callable, Mapping
 from typing import Any, TypeVar
 
@@ -54,13 +52,12 @@ __all__ = [
     "Span",
     "configure",
     "current_span",
+    "export",
     "flush",
     "set_redactor",
     "trace",
     "usage_from",
 ]
-
-DEFAULT_URL = "http://127.0.0.1:7600"
 
 F = TypeVar("F", bound=Callable[..., Any])
 Redactor = Callable[[dict[str, Any]], "dict[str, Any] | None"]
@@ -101,114 +98,10 @@ def _now_us() -> int:
 # ---------------------------------------------------------------------------------------------
 # Export
 
-
-class _Exporter:
-    """A background thread that sends queued spans in batches."""
-
-    def __init__(
-        self,
-        url: str,
-        token: str | None,
-        batch_size: int,
-        flush_interval: float,
-        timeout: float,
-        max_queue: int,
-    ) -> None:
-        self.url = url.rstrip("/") + "/api/v1/traces/ingest"
-        self.headers = {"content-type": "application/json"}
-        if token:
-            self.headers["authorization"] = f"Bearer {token}"
-        self.batch_size = batch_size
-        self.flush_interval = flush_interval
-        self.timeout = timeout
-        self.queue: queue.Queue[dict[str, Any] | threading.Event] = queue.Queue(max_queue)
-        self.dropped = 0
-        self.failed = 0
-        self.sent = 0
-        self._warned = False
-        self._thread = threading.Thread(target=self._loop, name="vigily-tracing", daemon=True)
-        self._thread.start()
-
-    def put(self, span: dict[str, Any]) -> None:
-        try:
-            self.queue.put_nowait(span)
-        except queue.Full:
-            self.dropped += 1
-            self._warn(f"the span queue is full; {self.dropped} spans dropped")
-
-    def flush(self, timeout: float | None = None) -> bool:
-        """Sends everything queued so far; returns False when that took longer than ``timeout``."""
-        done = threading.Event()
-        try:
-            self.queue.put(done, timeout=timeout)
-        except queue.Full:
-            return False
-        return done.wait(timeout)
-
-    def _warn(self, msg: str) -> None:
-        if not self._warned:
-            self._warned = True
-            print(f"vigily tracing: {msg}", file=sys.stderr)
-
-    def _send(self, batch: list[dict[str, Any]]) -> None:
-        body = json.dumps({"spans": batch}, default=str).encode()
-        req = urllib.request.Request(self.url, data=body, method="POST", headers=self.headers)
-        for attempt in range(3):
-            try:
-                with urllib.request.urlopen(req, timeout=self.timeout) as r:
-                    r.read()
-                self.sent += len(batch)
-                return
-            except urllib.error.HTTPError as e:
-                if e.code < 500:
-                    # A client error does not go away on retry. The response body is not shown:
-                    # it could echo span content.
-                    self.failed += len(batch)
-                    hint = " (set VIGILY_TOKEN to the server's token)" if e.code in (401, 403) else ""
-                    self._warn(f"the server refused {len(batch)} spans (HTTP {e.code} {e.reason}){hint}")
-                    return
-            except (OSError, ValueError):
-                pass
-            time.sleep(0.2 * (attempt + 1))
-        self.failed += len(batch)
-        self._warn(f"could not reach {self.url}; {self.failed} spans not sent (is `vigily up` running?)")
-
-    def _loop(self) -> None:
-        batch: list[dict[str, Any]] = []
-        deadline = time.monotonic() + self.flush_interval
-        while True:
-            try:
-                item = self.queue.get(timeout=max(0.0, deadline - time.monotonic()))
-            except queue.Empty:
-                item = None
-            if isinstance(item, threading.Event):
-                if batch:
-                    self._send(batch)
-                    batch = []
-                item.set()
-                deadline = time.monotonic() + self.flush_interval
-                continue
-            if item is not None:
-                batch.append(item)
-            if len(batch) >= self.batch_size or (batch and time.monotonic() >= deadline):
-                self._send(batch)
-                batch = []
-            if time.monotonic() >= deadline:
-                deadline = time.monotonic() + self.flush_interval
-
-
 _lock = threading.Lock()
-_exporter: _Exporter | None = None
-_settings: dict[str, Any] = {
-    "url": None,
-    "token": None,
-    "enabled": None,
-    "batch_size": 256,
-    "flush_interval": 1.0,
-    "timeout": 5.0,
-    "max_queue": 10_000,
-}
+_settings: dict[str, Any] = {"url": None, "token": None, "enabled": None}
 _redactor: Redactor | None = None
+_target: Any = None
 
 
 def _enabled() -> bool:
@@ -217,19 +110,29 @@ def _enabled() -> bool:
     return os.environ.get("VIGILY_TRACING", "on").strip().lower() not in ("0", "off", "false", "no")
 
 
-def _get_exporter() -> _Exporter:
-    global _exporter
-    with _lock:
-        if _exporter is None:
-            _exporter = _Exporter(
-                _settings["url"] or os.environ.get("VIGILY_URL") or DEFAULT_URL,
-                _settings["token"] or os.environ.get("VIGILY_TOKEN") or None,
-                _settings["batch_size"],
-                _settings["flush_interval"],
-                _settings["timeout"],
-                _settings["max_queue"],
-            )
-        return _exporter
+def _connection(run_id: str | None) -> Any:
+    """Where a span goes: the address given to :func:`configure`, else the engine of the span's
+    run when this process logs it, else the engine runs go to (``VIGILY_URL`` or the repository's)."""
+    global _target
+    from vigily import _config, _sender
+
+    if _settings["url"]:
+        c = _target
+        if c is None:
+            tok = _settings["token"]
+            token = (tok or None) if tok is not None else _config.token()
+            with _lock:
+                c = _target = _sender.connection(url=_settings["url"], token=token or "")
+        return c
+    if run_id is not None:
+        known = _sender.RUNS.get(run_id)
+        if known is not None:
+            return known[1]
+    c = _target
+    if c is None:
+        with _lock:
+            c = _target = _sender.connection()
+    return c
 
 
 def configure(
@@ -242,29 +145,32 @@ def configure(
     timeout: float | None = None,
     max_queue: int | None = None,
 ) -> None:
-    """Sets where and how spans are sent. Spans already queued are sent to the old server first.
+    """Sets where and how spans are sent. Spans already queued are sent to the old engine first.
 
-    ``url`` is the server (``VIGILY_URL``, else ``http://127.0.0.1:7600``); ``token`` the token
-    spans are sent with (``VIGILY_TOKEN``; ``vigily up`` prints the local one); ``enabled=False``
-    turns tracing off (``trace`` blocks then cost a few microseconds and send nothing);
-    ``batch_size`` and ``flush_interval`` (seconds) bound how long a span waits in the queue;
-    ``max_queue`` spans at most are queued, newer ones are dropped with a warning.
+    ``url`` is the engine (``VIGILY_URL``, else the engine of the span's run or of the repository,
+    as for runs); ``token`` the token spans are sent with (``VIGILY_TOKEN``; a local engine's own
+    token otherwise); ``enabled=False`` turns tracing off (``trace`` blocks then cost a few
+    microseconds and send nothing); ``batch_size`` and ``flush_interval`` (seconds) bound how long
+    a span waits in the queue; ``max_queue`` spans at most are queued, newer ones are dropped with
+    a warning.
     """
-    global _exporter
+    global _target
+    from vigily import _sender
+
     flush()
     with _lock:
+        for k, v in {"url": url, "token": token, "enabled": enabled}.items():
+            if v is not None:
+                _settings[k] = v
         for k, v in {
-            "url": url,
-            "token": token,
-            "enabled": enabled,
             "batch_size": batch_size,
             "flush_interval": flush_interval,
             "timeout": timeout,
             "max_queue": max_queue,
         }.items():
             if v is not None:
-                _settings[k] = v
-        _exporter = None
+                _sender.SPAN_SETTINGS[k] = v
+        _target = None
 
 
 def set_redactor(fn: Redactor | None) -> None:
@@ -278,26 +184,59 @@ def set_redactor(fn: Redactor | None) -> None:
 
 def flush(timeout: float | None = 10.0) -> bool:
     """Sends every finished span now. Returns False if that took longer than ``timeout`` seconds."""
-    ex = _exporter
-    if ex is None:
-        return True
-    return ex.flush(timeout)
+    from vigily import _sender
+
+    return _sender.flush_all(timeout)
 
 
-atexit.register(flush)
+def export(spans: list[dict[str, Any]]) -> None:
+    """Queues finished spans given as dicts (``trace_id``, ``span_id``, ``name``, ``start_time``
+    and ``end_time`` in microseconds, ...), as an importer would: they are redacted and sent like
+    the spans :func:`trace` records."""
+    for d in spans:
+        _queue(dict(d))
 
 
-def _after_fork_in_child() -> None:
-    """A forked child starts with no exporter: the parent's thread does not exist in it, and the
-    spans queued in the parent are the parent's to send. Without this, the child's exit would wait
-    on a queue nothing drains."""
-    global _exporter, _lock
-    _lock = threading.Lock()
-    _exporter = None
+def _queue(d: dict[str, Any], fresh: Callable[[], dict[str, Any]] | None = None) -> None:
+    from vigily import _config, _sender
+
+    if not _enabled():
+        return
+    if _redactor is not None:
+        if fresh is None:
+            kept = copy.deepcopy(d)
+            fresh = lambda: kept  # noqa: E731
+        try:
+            d = _redactor(d)
+        except Exception as e:  # noqa: BLE001 - never leak a payload because the hook failed
+            print(
+                f"vigily tracing: the redactor raised {type(e).__name__}; payloads dropped",
+                file=sys.stderr,
+            )
+            d = _strip(fresh())
+        if d is None:
+            return
+    if "project" not in d:
+        project = _config.project()
+        if project:
+            d["project"] = project
+    _sender.sender_for(_connection(d.get("run_id"))).put_span(d)
 
 
-if hasattr(os, "register_at_fork"):
-    os.register_at_fork(after_in_child=_after_fork_in_child)
+def _strip(d: dict[str, Any]) -> dict[str, Any]:
+    """A span without its input, output, error text and non-numeric attributes."""
+    d = dict(d)
+    for k in ("input", "output"):
+        d.pop(k, None)
+    if "error" in d:
+        d["error"] = _error_type(d["error"])
+    # Only numbers and booleans: strings, lists and dicts can all carry text.
+    d["attributes"] = {
+        k: v
+        for k, v in (d.get("attributes") or {}).items()
+        if isinstance(v, (bool, int, float)) and _IDENTIFIER.fullmatch(str(k))
+    }
+    return d
 
 
 _IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_.]{0,63}")
@@ -490,29 +429,7 @@ class Span:
             self.status = "ok"
         if not _enabled():
             return
-        d = self._to_dict()
-        if _redactor is not None:
-            try:
-                d = _redactor(d)
-            except Exception as e:  # noqa: BLE001 - never leak a payload because the hook failed
-                print(
-                    f"vigily tracing: the redactor raised {type(e).__name__}; payloads dropped",
-                    file=sys.stderr,
-                )
-                d = self._to_dict()
-                for k in ("input", "output"):
-                    d.pop(k, None)
-                if "error" in d:
-                    d["error"] = _error_type(d["error"])
-                # Only numbers and booleans: strings, lists and dicts can all carry text.
-                d["attributes"] = {
-                    k: v
-                    for k, v in self.attributes.items()
-                    if isinstance(v, (bool, int, float)) and _IDENTIFIER.fullmatch(str(k))
-                }
-            if d is None:
-                return
-        _get_exporter().put(d)
+        _queue(self._to_dict(), self._to_dict)
 
     def __repr__(self) -> str:
         return f"Span({self.name!r}, kind={self.kind!r}, trace={self.trace_id[:8]})"
