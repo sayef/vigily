@@ -7,12 +7,12 @@ use std::collections::HashMap;
 use async_trait::async_trait;
 use serde_json::Value;
 
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::model::{
     NewRun, Points, Run, RunPatch, RunStatus, Series, StepRange, Summary, TimeRange, TrackOpts,
 };
 
-pub use vigily_api::runs::PurgeSummary;
+pub use vigily_api::runs::{PurgeSummary, SeriesPoints};
 
 /// A repository of runs.
 #[async_trait]
@@ -129,6 +129,42 @@ pub trait RunWriter: Send + Sync {
 
     /// Records one metric point.
     fn track(&self, name: &str, value: f64, opts: TrackOpts) -> Result<()>;
+
+    /// Records the points of one series given in columns: `steps` and `values` of the same
+    /// length, `epochs` and `timestamps` of that length or empty (no epochs; now). `key` and
+    /// `run_id` are ignored: the points belong to this run. A point replaces the one at the same
+    /// step. The default calls [`RunWriter::track`] per point; a backend with a batch write
+    /// overrides it.
+    fn track_batch(&self, points: &SeriesPoints) -> Result<()> {
+        let n = points.steps.len();
+        if points.values.len() != n
+            || !(points.epochs.is_empty() || points.epochs.len() == n)
+            || !(points.timestamps.is_empty() || points.timestamps.len() == n)
+        {
+            return Err(Error::InvalidArgument(format!(
+                "series {:?}: steps, values, epochs and timestamps must have the same length \
+                 (epochs and timestamps may be empty)",
+                points.name
+            )));
+        }
+        let context = match &points.context {
+            Value::Null => None,
+            c => Some(c.clone()),
+        };
+        for i in 0..n {
+            self.track(
+                &points.name,
+                points.values[i],
+                TrackOpts {
+                    step: Some(points.steps[i]),
+                    epoch: points.epochs.get(i).copied().flatten(),
+                    context: context.clone(),
+                    timestamp: points.timestamps.get(i).copied(),
+                },
+            )?;
+        }
+        Ok(())
+    }
 
     /// Merges a JSON object into the parameters by dotted key.
     fn set_params(&self, params: &Value) -> Result<()>;
