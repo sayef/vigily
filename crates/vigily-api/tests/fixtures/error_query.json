@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "invalid_argument",
+    "message": "`lr` needs a value after the operator",
+    "position": 2
+  }
+}
