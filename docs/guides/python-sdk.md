@@ -145,7 +145,7 @@ vigily.configure(url="https://vigily.example.com", token=os.environ["TEAM_TOKEN"
 
 | Setting | Environment | Meaning |
 |---|---|---|
-| `configure(url=)` | `VIGILY_URL` | An engine's address, such as a team server (see [Tokens](configuration.md#tokens)); no engine is started |
+| `configure(url=)` | `VIGILY_URL` | An engine's address, such as a [team server](team-server.md); no engine is started |
 | `configure(token=)` | `VIGILY_TOKEN` | The token to send; it needs the `read` and `ingest` scopes. A local engine's own token is used otherwise |
 | `configure(project=)` | `VIGILY_PROJECT` | The default project of traces, whose payload policy applies |
 | `configure(offline=True)` | `VIGILY_OFFLINE=1` | Contact no engine: everything goes to the spool |

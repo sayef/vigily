@@ -159,6 +159,12 @@ The first release, published as betas (0.1.0-beta.N) before 0.1.0.
   build under `tokens/` is moved there on the first start.
 - The server stops cleanly on SIGTERM as well as Ctrl-C (`docker stop`, service managers): open
   requests get 10 seconds, then open runs, storage and records are flushed.
+- The Docker image runs `vigily-engine --host 0.0.0.0 --mode server` (entry point `vigily-engine`)
+  and checks `/api/v1/health`. `compose.yaml` keeps the data in the `vigily` volume only: the
+  `VIGILY_DATA`, `VIGILY_UID`, `VIGILY_GID` and `VIGILY_SERVER_REPO` variables are gone, since
+  scripts now log over HTTP (`VIGILY_URL` and `VIGILY_TOKEN`) instead of writing to a shared
+  directory. It gives the engine 30 seconds to stop, and shows a `trainer` service logging from a
+  second container. New guide: running a team server (tokens, TLS, backups).
 
 - Every API route except health, info and `auth/me` needs a token, including the deprecated
   `/api/*` aliases and OTLP's `/v1/traces`. `docker compose up` needs `VIGILY_ADMIN_TOKEN`.

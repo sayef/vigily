@@ -99,6 +99,7 @@ nav:
       - Drift methods: guides/drift.md
       - LLM tracing: guides/tracing.md
       - Self-hosting and storage: guides/storage.md
+      - Running a team server: guides/team-server.md
       - The audit trail: guides/audit-trail.md
   - Design:
       - Brand: design/brand.md

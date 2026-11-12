@@ -65,7 +65,8 @@ export PATH="$PWD/target/release:$PATH"
 ## Run with Docker
 
 Each release publishes an image for amd64 and arm64 as `ghcr.io/sayef/vigily`, tagged `vX.Y.Z`,
-`X.Y` and `latest`. From a checkout of this repository (for `compose.yaml`):
+`X.Y` and `latest`. It runs `vigily-engine --host 0.0.0.0 --mode server`: a shared engine that
+needs an admin token. From a checkout of this repository (for `compose.yaml`):
 
 ```bash
 export VIGILY_ADMIN_TOKEN=$(openssl rand -hex 32)     # keep it: you sign in with it
@@ -79,10 +80,9 @@ Or without Compose:
 docker run -d -p 127.0.0.1:7600:7600 -e VIGILY_ADMIN_TOKEN -v vigily:/data ghcr.io/sayef/vigily:latest
 ```
 
-The container serves on all its addresses, so vigily runs in server mode and refuses to start
-without `VIGILY_ADMIN_TOKEN` (at least 16 characters; `VIGILY_ADMIN_TOKEN_FILE` names a file
-holding it instead, for Docker secrets). vigily never stores it. Compose reads it from your shell
-or from a `.env` file next to `compose.yaml`.
+The engine refuses to start without `VIGILY_ADMIN_TOKEN` (at least 16 characters;
+`VIGILY_ADMIN_TOKEN_FILE` names a file holding it instead, for Docker secrets). vigily never stores
+it. Compose reads it from your shell or from a `.env` file next to `compose.yaml`.
 
 To build the image from the checkout instead, add `compose.dev.yaml`:
 
@@ -90,34 +90,36 @@ To build the image from the checkout instead, add `compose.dev.yaml`:
 docker compose -f compose.yaml -f compose.dev.yaml up -d --build
 ```
 
-Open <http://localhost:7600> and sign in with the admin token. The container runs as an unprivileged user (uid 10001) and keeps
-everything under `/data`: the repository in `/data/repo`, and `/data/vigily.toml` as the
-configuration when it exists. Both live in the `vigily` volume, so they survive restarts and
-rebuilds; `docker compose down -v` deletes them.
+Open <http://localhost:7600> and sign in with the admin token. The container runs as an
+unprivileged user (uid 10001) and keeps everything under `/data`: the repository in `/data/repo`,
+and `/data/vigily.toml` as the configuration when it exists. Both live in the `vigily` volume, so
+they survive restarts and rebuilds; `docker compose down -v` deletes them. `docker compose stop`
+sends SIGTERM, and the engine writes out what it holds in memory before it exits.
 
-The port is published on `127.0.0.1` only. Every request needs a token; for anything beyond this
-machine, create scoped tokens for people and scripts ([Tokens](guides/configuration.md#tokens)) and
-put TLS in front of vigily.
-
-Training scripts log to the container over HTTP. Create a token for them with the `read` and
-`ingest` scopes, and point the SDK at the server:
+Training scripts log to the container over HTTP, from this machine or any other that reaches it.
+Create a token for them with the `read` and `ingest` scopes (`ingest` alone cannot read the run
+back), and point the SDK at the engine:
 
 ```bash
-docker compose exec vigily vigily --url http://127.0.0.1:7600 --token "$VIGILY_ADMIN_TOKEN" \
-  tokens create training --scope read --scope ingest
-VIGILY_URL=http://127.0.0.1:7600 VIGILY_TOKEN=vgy_... python train.py   # appears in the web app as it logs
+docker compose exec vigily sh -c \
+  'vigily --url http://127.0.0.1:7600 --token "$VIGILY_ADMIN_TOKEN" tokens create train --scope read --scope ingest'
+VIGILY_URL=http://localhost:7600 VIGILY_TOKEN=vgy_... python train.py   # appears in the web app as it logs
 ```
 
 LLM traces travel the same way (see [LLM tracing](guides/tracing.md)). The CLI is in the image
-too: `docker compose exec vigily vigily runs` lists the runs.
+too: `docker compose exec vigily sh -c 'vigily --url http://127.0.0.1:7600 --token
+"$VIGILY_ADMIN_TOKEN" runs'` lists the runs.
 
-Scheduled evaluations run their commands inside the server's container, which has no Python. For
+The port is published on `127.0.0.1` only. To share the engine with a team (tokens per person, TLS
+through a reverse proxy, backups of the volume), see [Running a team server](guides/team-server.md).
+
+Scheduled evaluations run their commands inside the engine's container, which has no Python. For
 schedules, build your own image on top of this one with your evaluation's dependencies, or run
 `vigily up` outside Docker.
 
-`scripts/docker-local.sh` builds the binary on your machine with `cargo zigbuild` and packages it
-as `vigily:local` (run it with `VIGILY_IMAGE=vigily:local docker compose up -d`), which is faster
-when you rebuild often.
+`scripts/docker-local.sh` builds the binaries on your machine with `cargo zigbuild` and packages
+them as `vigily:local` (run it with `VIGILY_IMAGE=vigily:local docker compose up -d`), which is
+faster when you rebuild often.
 
 ## Try it on synthetic data
 

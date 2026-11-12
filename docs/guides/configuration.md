@@ -19,20 +19,20 @@ the server serves it. A `vigily.toml` adds schedules, an alert webhook and drift
 | `VIGILY_ENGINE` | CLI | The `vigily-engine` binary to start, when it is neither beside `vigily` nor on `PATH` |
 | `VIGILY_SCHEDULE`, `VIGILY_SCHEDULE_RUN`, `VIGILY_SCHEDULED_FOR` | scheduled commands | Set by the scheduler; runs the command logs link back to the schedule run |
 
-In the Docker image `VIGILY_REPO` is `/data/repo` and `VIGILY_PORT` is 7600; the server reads
-`/data/vigily.toml` when it exists. `compose.yaml` reads these from your shell:
+In the Docker image `VIGILY_REPO` is `/data/repo` and `VIGILY_PORT` is 7600; the engine reads
+`/data/vigily.toml` when it exists. `compose.yaml` keeps `/data` in the `vigily` volume and reads
+these from your shell or a `.env` file:
 
 | Variable | Meaning |
 |---|---|
-| `VIGILY_IMAGE` | The image, default `ghcr.io/sayef/vigily:latest`; `compose.dev.yaml` builds `vigily:local` |
-| `VIGILY_SERVER_REPO` | The server's repository, default `/data/repo`; an object-store URI works too |
-| `VIGILY_DATA` | What is mounted at `/data`: the `vigily` volume, or a directory such as `./vigily-data` |
-| `VIGILY_UID`, `VIGILY_GID` | The user the server runs as, default 10001; your own ids with a directory |
-| `VIGILY_HOST_PORT` | The port published on `127.0.0.1`, default 7600 |
 | `VIGILY_ADMIN_TOKEN` | Required: the admin token; `docker compose up` refuses to start without it |
+| `VIGILY_IMAGE` | The image, default `ghcr.io/sayef/vigily:latest`; `compose.dev.yaml` builds `vigily:local` |
+| `VIGILY_HOST_PORT` | The port published on `127.0.0.1`, default 7600 |
 | `VIGILY_LOG` | As above |
 
-`VIGILY_REPO` itself is left to the SDK on your machine, so one shell can serve and log.
+To keep the repository on object storage, set `VIGILY_REPO` to an `s3://`, `gs://` or `az://` URI
+in the service's `environment`. Scripts log to the container with `VIGILY_URL` and `VIGILY_TOKEN`
+([Running a team server](team-server.md)).
 
 ## Tokens
 
