@@ -54,7 +54,12 @@ over the limit).
 | `GET /api/v1/health` | `ok` |
 | `GET /api/v1/info` | `{version, api_version: "v1", mode: "local", capabilities}` |
 | `GET /api/v1/meta` | counts, experiments, metric keys with run counts, parameter keys with kinds and distinct values |
-| `GET /api/v1/runs?q=&sort=&desc=&archived=` | all matching rows; a query error is a 400 with `error.position` |
+| `GET /api/v1/runs?q=&sort=&desc=&archived=&limit=&offset=&fields=` | matching rows, a page of them with `limit` and `offset`; `total` counts every run, `matched` the matching ones; `fields=summary` leaves out parameters and metric statistics; a query error is a 400 with `error.position` |
+| `GET /api/v1/runs/{id}/params` | the parameters as a nested object |
+| `GET /api/v1/runs/{id}/series` | the series with their statistics |
+| `GET /api/v1/runs/{id}/points?name=&context=&start_time=&stop_time=` | one series' points (`context` is a JSON object; times in UTC microseconds); NaN and infinities are the strings `NaN`, `Infinity`, `-Infinity` |
+| `POST /api/v1/admin/purge` | `{force}` → what was erased, with `legacy_records_present`; a tag that keeps deleted data is a 409 `tag_blocks_purge` |
+| `POST /api/v1/admin/optimize` | compacts storage; `{seconds}` |
 | `GET /api/v1/runs/{id}` | the row plus the parameter tree and series with summaries |
 | `PATCH /api/v1/runs/{id}` | `name`, `experiment`, `description`, `tags`, `archived` |
 | `POST /api/v1/chart` | `{runs, metric, x, range, points, group_by, aggregate}` → `{x, series[{run_id, name, group, y, last}], groups[{label, runs, mean, min, max, n}], domain, exact, missing}` |
@@ -63,13 +68,23 @@ Evaluation endpoints (`evals_api.rs`): `GET /api/v1/datasets`, `GET /api/v1/data
 `GET /api/v1/runs/{id}/items`, `POST /api/v1/runs/{id}/labels`, `GET /api/v1/runs/{id}/audit`,
 `GET /api/v1/compare?a=&b=`, `GET /api/v1/schedules`, `GET /api/v1/schedules/{name}/runs[/{id}]`,
 `GET /api/v1/suites`, `GET /api/v1/suites/{key}`, `PUT /api/v1/suites/{key}/baseline`,
-`GET /api/v1/suites/{key}/data-drift`, `GET /api/v1/alerts`, `POST /api/v1/alerts/{id}`. The scheduler
+`GET /api/v1/suites/{key}/data-drift`, `GET /api/v1/alerts`, `POST /api/v1/alerts/{id}`, and, new with
+`/api/v1`, `GET /api/v1/datasets/{name}/versions`, `GET /api/v1/datasets/{name}/versions/{v}/items`
+(NDJSON, one item per line), `GET /api/v1/runs/{id}/results` and `POST /api/v1/schedules/{name}/run`
+(202 with the first attempt's id, followed at `GET /api/v1/schedules/{name}/runs/{id}`; 409 while
+the schedule is running). The scheduler
 (`scheduler.rs`), drift monitor and webhook (`monitor.rs`) and the configuration file (`config.rs`)
 start with `serve()`.
 
 Tracing endpoints (`traces_api.rs`, model and storage in `vigily-core/src/traces.rs`):
 `POST /api/v1/traces/ingest`, `POST /v1/traces` (OTLP/HTTP JSON), `GET /api/v1/traces?run=&model=&status=&since=&until=&q=`,
-`GET /api/v1/traces/{id}`, `DELETE /api/v1/traces/{id}`.
+`GET /api/v1/traces/{id}`, `DELETE /api/v1/traces/{id}`, and `POST /api/v1/traces/delete`
+(`{ids, erase, force}`) and `GET /api/v1/tracing/policy?project=` (the payload policy a client applies
+before sending, and the one used while a trace's project is unknown).
+
+Routes that write outside the web app's forms (span ingest, admin, deleting traces, starting a
+schedule) accept only `Content-Type: application/json` and refuse an `Origin` other than the
+server's own, so a web page cannot trigger them. Routes added with `/api/v1` have no `/api` alias.
 
 Raw points of finished series are kept in a bounded cache (8 million points), so zooming re-samples
 without reading storage. Anything that is not `/api/...` or `/v1/traces` is the embedded web app; client-side routes
