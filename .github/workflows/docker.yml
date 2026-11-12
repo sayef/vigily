@@ -35,10 +35,7 @@ jobs:
           docker compose config --quiet
           docker compose -f compose.yaml -f compose.dev.yaml config --quiet
       - name: Build the image
-        env:
-          # kv0 is a private git dependency until it is published; the build reads it through this secret.
-          GH_TOKEN: ${{ secrets.KV0_TOKEN }}
-        run: docker build --secret id=gh_token,env=GH_TOKEN -t vigily:ci .
+        run: docker build -t vigily:ci .
       - name: The container serves the web app and the API
         run: |
           docker run -d --name vigily -p 127.0.0.1:7600:7600 vigily:ci

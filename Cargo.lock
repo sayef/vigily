@@ -3240,7 +3240,7 @@ dependencies = [
 [[package]]
 name = "kv0"
 version = "0.2.0"
-source = "git+https://github.com/sayef/kv0?branch=main#d55ffef1219f106ed1054951628cd02e50c081a7"
+source = "git+https://github.com/sayef/kv0?branch=main#b84c39fced0b99cb7303da367884f84d498b26a1"
 dependencies = [
  "arrow-array",
  "arrow-schema",
