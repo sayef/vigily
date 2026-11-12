@@ -115,7 +115,11 @@ The first release, published as betas (0.1.0-beta.N) before 0.1.0.
   maturin (`bindings = "bin"`) for Linux x86_64 and arm64 (manylinux 2_28), Linux x86_64 with musl
   and macOS arm64 and x86_64, stripped, versioned like the workspace; the release workflow builds
   them (and, on pull requests that change how, only builds them) and has a `pypi-engine` job to
-  publish them with trusted publishing.
+  publish them with trusted publishing, from its own `pypi-engine` environment.
+- `bench/ingest.py` measures ingest through the SDK into an engine (track latency, points per
+  second per process and engine-wide, engine CPU and memory, time until new points are readable),
+  and `bench/compare.sh` compares an engine built from another commit with this checkout's; the
+  Benchmarks workflow runs both.
 - An offline spool: batches the SDK cannot send (after two minutes without the engine, at exit, or
   when the engine falls behind) go to gzip-compressed NDJSON files in `spool/<writer>/` under the
   state directory (0600, written atomically), and are sent in order once the engine answers, by the
@@ -138,6 +142,12 @@ The first release, published as betas (0.1.0-beta.N) before 0.1.0.
   redactor and the engine's payload policy (fetched per project) apply before a span is queued or
   spooled. `RunDeletedError` surfaces on the next call after the engine reported the deletion, and
   `Run.finish()` no longer waits for storage (`vigily.flush()` and `Repo` reads do).
+- The engine writes each ingested series batch with kv0's `Run::track_many` (one lock and one
+  log append per batch instead of per point): about five times the points per second with eight
+  SDK processes, at a tenth of the CPU time. After writes it commits buffered points (at most once
+  a second) before refreshing the run list, so new points are readable within about a second.
+  Finishing a run commits its points and status together, one storage commit per run instead of
+  two.
 - The engine stores every explicit `heartbeat` operation (implicit ones stay at one per two
   minutes), and `POST /api/v1/runs/{id}/resume` flushes the run first, so a run created a moment ago
   can be resumed.
