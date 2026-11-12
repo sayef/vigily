@@ -38,6 +38,8 @@ async-trait.workspace = true
 tempfile.workspace = true
 tower.workspace = true
 http-body-util = "0.1"
+# Gzip request bodies in the ingest tests (already in the tree through tower-http).
+flate2 = "1"
 
 [target.'cfg(all(target_os = "linux", target_env = "gnu"))'.dependencies]
 libc = "0.2"

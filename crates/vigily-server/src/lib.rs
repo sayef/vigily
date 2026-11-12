@@ -26,6 +26,8 @@ pub mod monitor;
 pub mod runs_api;
 pub mod scheduler;
 pub mod traces_api;
+pub mod write_api;
+pub mod writers;
 
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::net::SocketAddr;
@@ -77,7 +79,18 @@ pub struct AppState {
     pub(crate) traces_cache: Mutex<Option<TracesCache>>,
     /// The number of traces and when it was counted (UTC microseconds).
     pub(crate) traces_count: Mutex<Option<(i64, usize)>>,
+    /// Open run writers, applied ingest batches and the ingest budget.
+    pub writes: writers::Writes,
+    /// Wakes the background catalog refresh early (after a write).
+    pub(crate) refresh_now: tokio::sync::Notify,
     pub version: &'static str,
+}
+
+/// Options of an engine beyond its storage and configuration file.
+#[derive(Clone, Debug, Default)]
+pub struct EngineOptions {
+    /// Body limit and ingest budget of the write routes.
+    pub limits: writers::WriteLimits,
 }
 
 impl AppState {
@@ -95,6 +108,15 @@ impl AppState {
         records: Arc<dyn RecordStore>,
         config: config::Config,
     ) -> Arc<Self> {
+        Self::with_options(store, records, config, EngineOptions::default())
+    }
+
+    pub fn with_options(
+        store: Arc<dyn Store>,
+        records: Arc<dyn RecordStore>,
+        config: config::Config,
+        opts: EngineOptions,
+    ) -> Arc<Self> {
         Arc::new(Self {
             catalog: Catalog::new(store),
             records,
@@ -110,6 +132,8 @@ impl AppState {
             ingest_lock: tokio::sync::Mutex::new(()),
             traces_cache: Mutex::new(None),
             traces_count: Mutex::new(None),
+            writes: writers::Writes::new(opts.limits),
+            refresh_now: tokio::sync::Notify::new(),
             version: env!("CARGO_PKG_VERSION"),
         })
     }
@@ -273,9 +297,10 @@ fn api() -> Router<Arc<AppState>> {
 }
 
 /// Routes added with `/api/v1`; the deprecated `/api` aliases do not serve them.
-fn v1_only() -> Router<Arc<AppState>> {
+fn v1_only(state: &Arc<AppState>) -> Router<Arc<AppState>> {
     Router::new()
         .route("/info", get(info))
+        .merge(write_api::routes(state, state.writes.limits))
         .merge(runs_api::routes())
         .merge(evals_api::v1_routes())
         .merge(traces_api::v1_routes())
@@ -295,6 +320,7 @@ pub const CAPABILITIES: &[&str] = &[
     "traces",
     "otlp",
     "admin",
+    "ingest",
 ];
 
 async fn info(State(s): State<Arc<AppState>>) -> Json<Info> {
@@ -313,7 +339,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .nest(
             "/api/v1",
             api()
-                .merge(v1_only())
+                .merge(v1_only(&state))
                 .layer(axum::middleware::from_fn(v1_errors)),
         )
         .nest("/api", api().layer(axum::middleware::from_fn(legacy)))
@@ -443,7 +469,11 @@ pub async fn serve(
     let bg = state.clone();
     tokio::spawn(async move {
         loop {
-            tokio::time::sleep(REFRESH_EVERY).await;
+            // A write wakes the refresh early, so new runs and points show up at once.
+            tokio::select! {
+                _ = tokio::time::sleep(REFRESH_EVERY) => {}
+                _ = bg.refresh_now.notified() => {}
+            }
             if let Err(e) = bg.catalog.refresh().await {
                 tracing::warn!(error = %e, "catalog refresh failed");
             }
@@ -489,6 +519,16 @@ async fn local_only(req: axum::extract::Request, next: axum::middleware::Next) -
 /// server's own (a browser always names the page's origin on a cross-origin POST). Every route
 /// that writes outside the web app's own forms (ingest, admin) checks this.
 pub(crate) fn from_a_client(headers: &HeaderMap, what: &str) -> Result<(), ApiError> {
+    from_a_client_as(headers, what, &["application/json"])
+}
+
+/// [`from_a_client`] for a route that accepts other media types as well (`""`: no
+/// `Content-Type`, for a request without a body). The origin check stays.
+pub(crate) fn from_a_client_as(
+    headers: &HeaderMap,
+    what: &str,
+    media_types: &[&str],
+) -> Result<(), ApiError> {
     let header = |n: header::HeaderName| headers.get(n).and_then(|v| v.to_str().ok());
     let ct = header(header::CONTENT_TYPE)
         .unwrap_or("")
@@ -500,7 +540,7 @@ pub(crate) fn from_a_client(headers: &HeaderMap, what: &str) -> Result<(), ApiEr
         ));
     }
     let media = ct.split(';').next().unwrap_or("").trim();
-    if media != "application/json" {
+    if !media_types.contains(&media) {
         return Err(ApiError::new(
             StatusCode::UNSUPPORTED_MEDIA_TYPE,
             format!("send {what} with Content-Type: application/json"),
@@ -759,6 +799,9 @@ async fn delete_runs(
         ));
     }
     let deleted = s.catalog.store().delete_runs(&req.ids).await?;
+    for id in &req.ids {
+        s.writes.writers.remove(id);
+    }
     // Their traces went with them.
     *s.traces_count.lock() = None;
     *s.traces_cache.lock() = None;
