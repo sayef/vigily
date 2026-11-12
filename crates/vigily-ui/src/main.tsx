@@ -4,6 +4,7 @@ import { createRoot } from "react-dom/client";
 import { BrowserRouter, Link, Route, Routes } from "react-router";
 import { Toaster } from "sonner";
 import { Layout } from "@/components/layout";
+import { AuthGate } from "@/components/sign-in";
 import { ThemeProvider, useTheme } from "@/components/theme";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { SelectionProvider } from "@/lib/selection";
@@ -55,29 +56,31 @@ createRoot(document.getElementById("root")!).render(
       <QueryClientProvider client={queries}>
         <TooltipProvider delayDuration={300} skipDelayDuration={200}>
           <SelectionProvider>
-            <BrowserRouter>
-              <Routes>
-                <Route element={<Layout />}>
-                  <Route index element={<RunsPage />} />
-                  <Route path="runs/:id" element={<RunPage />} />
-                  <Route path="metrics" element={<ExplorerPage />} />
-                  <Route path="metrics/compare" element={<CompareRunsPage />} />
-                  <Route path="experiments" element={<ExperimentsPage />} />
-                  <Route path="traces" element={<TracesPage />} />
-                  <Route path="traces/:id" element={<TracePage />} />
-                  <Route path="datasets" element={<DatasetsPage />} />
-                  <Route path="datasets/:name" element={<DatasetPage />} />
-                  <Route path="compare" element={<ComparePage />} />
-                  <Route path="schedules" element={<SchedulesPage />} />
-                  <Route path="schedules/:name" element={<SchedulePage />} />
-                  <Route path="drift" element={<DriftPage />} />
-                  <Route path="drift/:key" element={<SuitePage />} />
-                  <Route path="alerts" element={<AlertsPage />} />
-                  <Route path="settings" element={<SettingsPage />} />
-                  <Route path="*" element={<NotFound />} />
-                </Route>
-              </Routes>
-            </BrowserRouter>
+            <AuthGate>
+              <BrowserRouter>
+                <Routes>
+                  <Route element={<Layout />}>
+                    <Route index element={<RunsPage />} />
+                    <Route path="runs/:id" element={<RunPage />} />
+                    <Route path="metrics" element={<ExplorerPage />} />
+                    <Route path="metrics/compare" element={<CompareRunsPage />} />
+                    <Route path="experiments" element={<ExperimentsPage />} />
+                    <Route path="traces" element={<TracesPage />} />
+                    <Route path="traces/:id" element={<TracePage />} />
+                    <Route path="datasets" element={<DatasetsPage />} />
+                    <Route path="datasets/:name" element={<DatasetPage />} />
+                    <Route path="compare" element={<ComparePage />} />
+                    <Route path="schedules" element={<SchedulesPage />} />
+                    <Route path="schedules/:name" element={<SchedulePage />} />
+                    <Route path="drift" element={<DriftPage />} />
+                    <Route path="drift/:key" element={<SuitePage />} />
+                    <Route path="alerts" element={<AlertsPage />} />
+                    <Route path="settings" element={<SettingsPage />} />
+                    <Route path="*" element={<NotFound />} />
+                  </Route>
+                </Routes>
+              </BrowserRouter>
+            </AuthGate>
             <Toasts />
           </SelectionProvider>
         </TooltipProvider>
