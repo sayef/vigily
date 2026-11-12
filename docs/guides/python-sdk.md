@@ -5,9 +5,13 @@
 HTTP API, `/api/v1`.
 
 ```bash
-pip install 'vigily[local]'   # the SDK and the engine for this machine
+pip install 'vigily[local]'   # the SDK and the engine for this machine (vigily-engine)
 pip install vigily            # the SDK only, for a team server or an engine installed otherwise
 ```
+
+`vigily-engine` is a platform wheel holding the engine binary, for Linux (x86_64 and arm64,
+glibc 2.28 or newer; x86_64 with musl) and macOS (Apple silicon and Intel). It installs
+`vigily-engine` next to Python, where the SDK finds it.
 
 ## Runs
 
