@@ -24,8 +24,9 @@ service; importing other trackers' repositories.
 
 | Crate | Depends on | Why it is separate |
 |---|---|---|
-| `vigily-core` | kv0 (optional) | The model, queries and chart maths are testable without HTTP or Python |
-| `vigily-server` | core, ui, axum | The HTTP surface; tests drive it in memory with `tower::oneshot` |
+| `vigily-api` | serde | The JSON of the HTTP API (requests, answers, the run model), shared by the engine and its clients; golden files pin the wire format |
+| `vigily-core` | api, kv0 (optional) | The model, queries and chart maths are testable without HTTP or Python |
+| `vigily-server` | api, core, ui, axum | The HTTP surface; tests drive it in memory with `tower::oneshot` |
 | `vigily-ui` | nothing at runtime | `build.rs` embeds `dist`, so the binary carries the app |
 | `vigily-cli` | server | The `vigily` binary |
 | `vigily-py` | core, pyo3 | An abi3 extension (one wheel per platform for Python 3.11+) |

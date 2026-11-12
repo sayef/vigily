@@ -8,11 +8,20 @@ training script ── vigily (Python) ── vigily-py (pyo3) ─┐
 browser ── vigily-ui (embedded) ── vigily-server (axum) ─┘
 ```
 
+## vigily-api
+
+The JSON of the HTTP API: the run model (`model.rs`), the catalog's series and key lists, chart
+requests and answers, evaluation, drift and trace types, and the answer of every route. It holds
+data types only and depends on serde alone, so a client can use it without the storage engine.
+`vigily-core` re-exports these types under their old paths. `tests/fixtures` holds one golden JSON
+file per answer, captured from the server; `tests/wire.rs` reads each into its type and writes it
+back unchanged, keys in the same order.
+
 ## vigily-core
 
 | Module | What it holds |
 |---|---|
-| `model.rs` | `Run`, `RunStatus`, `RunPatch`, `Series`, `Points`, `Summary`, metric keys (`loss[val]`), JSON flattening |
+| `model.rs` | Re-exports the run model from `vigily-api`: `Run`, `RunStatus`, `RunPatch`, `Series`, `Points`, `Summary`, metric keys (`loss[val]`), JSON flattening |
 | `store.rs` | The `Store` and `RunWriter` traits |
 | `memory.rs` | `MemoryStore`, used by the tests |
 | `kv0_store.rs` | `Kv0Store`, the adapter to `kv0::tracking` |

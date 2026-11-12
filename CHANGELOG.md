@@ -66,6 +66,10 @@ The first release, published as betas (0.1.0-beta.N) before 0.1.0.
 
 ### Changed
 
+- The JSON types of the HTTP API (the run model, every route's answer, evaluation, drift and trace
+  types) move to a new crate, `vigily-api`, which depends on serde alone; `vigily-core` re-exports
+  them. Schedules and suites answer with typed structures instead of ad-hoc JSON. Golden JSON
+  files in `crates/vigily-api/tests/fixtures` pin the wire format; the web app sees the same JSON.
 - Recursive replaces Atkinson Hyperlegible as vigily's typeface, in the app, the docs and the brand
   assets: Sans Linear for text and Mono Linear for run names, values, keys and code, from one
   self-hosted variable file (SIL OFL). Bold is 660 and headings track slightly tighter; the wordmark,
