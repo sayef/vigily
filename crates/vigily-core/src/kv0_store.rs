@@ -253,6 +253,7 @@ impl Store for Kv0Store {
             versions_removed: r.versions_removed,
             bytes_removed: r.bytes_removed,
             tags_deleted: r.tags_deleted,
+            ..Default::default()
         })
     }
 

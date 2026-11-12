@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
 use axum::extract::{Path, Query as QueryParams, State};
-use axum::http::{header, StatusCode};
+use axum::http::{header, HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post, put};
 use axum::{Json, Router};
@@ -15,8 +15,9 @@ use serde_json::{json, Value};
 use vigily_api::evals::{
     AlertChange, CompareResponse, CompareRow, CompareRun, DataDriftResponse, DatasetResponse,
     DatasetRun, DriftDetail, HistoryPoint, ItemRow, ItemsResponse, LinkedRun, NewLabel, Schedule,
-    ScheduleRunDetail, ScheduleRunListed, ScheduleRunSummary, ScheduleRunsResponse,
-    SchedulesResponse, ScoreSummary, Side, SuiteDetail, SuiteSummary, Thresholds, Verdict,
+    ScheduleRunDetail, ScheduleRunListed, ScheduleRunStarted, ScheduleRunSummary,
+    ScheduleRunsResponse, SchedulesResponse, ScoreSummary, Side, SuiteDetail, SuiteSummary,
+    Thresholds, Verdict, VersionSummary,
 };
 use vigily_core::drift::{self, DriftConfig, Suite};
 use vigily_core::evals::{self, Alert, Baseline, EvalResult, Item, Label, ScheduleRun};
@@ -44,6 +45,18 @@ pub fn routes() -> Router<Arc<AppState>> {
         .route("/suites/{key}/data-drift", get(data_drift))
         .route("/alerts", get(alerts))
         .route("/alerts/{id}", post(update_alert))
+}
+
+/// Evaluation routes added with `/api/v1`, which have no alias under `/api`.
+pub fn v1_routes() -> Router<Arc<AppState>> {
+    Router::new()
+        .route("/datasets/{name}/versions", get(dataset_versions))
+        .route(
+            "/datasets/{name}/versions/{version}/items",
+            get(dataset_items),
+        )
+        .route("/runs/{id}/results", get(run_results))
+        .route("/schedules/{name}/run", post(run_schedule))
 }
 
 fn bad(m: impl Into<String>) -> ApiError {
@@ -227,6 +240,52 @@ async fn dataset(
     }))
 }
 
+async fn dataset_info(s: &AppState, name: &str) -> Result<evals::DatasetInfo, ApiError> {
+    evals::datasets(&*s.records)
+        .await?
+        .into_iter()
+        .find(|d| d.name == name)
+        .ok_or_else(|| not_found(format!("no dataset named {name}")))
+}
+
+/// A dataset's versions, newest first, without their item lists.
+async fn dataset_versions(
+    State(s): State<Arc<AppState>>,
+    Path(name): Path<String>,
+) -> ApiResult<Vec<VersionSummary>> {
+    s.records.refresh().await?;
+    dataset_info(&s, &name).await?;
+    let versions = evals::dataset_versions(&*s.records, &name).await?;
+    Ok(Json(versions.iter().rev().map(Into::into).collect()))
+}
+
+/// One version's items as newline-delimited JSON, one item per line, in the version's order.
+async fn dataset_items(
+    State(s): State<Arc<AppState>>,
+    Path((name, version)): Path<(String, u32)>,
+) -> Result<Response, ApiError> {
+    s.records.refresh().await?;
+    dataset_info(&s, &name).await?;
+    let v = evals::dataset_version(&*s.records, &name, Some(version)).await?;
+    let items = evals::dataset_items(&*s.records, &v).await?;
+    // Serialised a chunk at a time as the body is sent, so a large version is never held twice.
+    let chunks = items.chunks(256).map(<[Item]>::to_vec).collect::<Vec<_>>();
+    let stream = futures_util::stream::iter(chunks.into_iter().map(|chunk| {
+        let mut buf = Vec::new();
+        for item in &chunk {
+            serde_json::to_writer(&mut buf, item).map_err(std::io::Error::other)?;
+            buf.push(b'\n');
+        }
+        Ok::<_, std::io::Error>(buf)
+    }));
+    Ok((
+        StatusCode::OK,
+        [(header::CONTENT_TYPE, "application/x-ndjson")],
+        axum::body::Body::from_stream(stream),
+    )
+        .into_response())
+}
+
 // ---------------------------------------------------------------------------------------------
 // Eval items, labels, comparison, audit
 
@@ -347,6 +406,16 @@ async fn run_items(
             .collect(),
         items: rows,
     }))
+}
+
+/// The per-item results of an eval run, as the SDK stored them.
+async fn run_results(
+    State(s): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> ApiResult<Vec<EvalResult>> {
+    eval_entry(&s, &id)?;
+    s.records.refresh().await?;
+    Ok(Json(evals::results(&*s.records, &id).await?))
 }
 
 async fn add_label(
@@ -721,6 +790,55 @@ async fn schedule_run(
     (r.stdout, r.stderr) = (stdout, stderr);
     let eval_runs = linked_runs(&s, &name).remove(&r.id).unwrap_or_default();
     Ok(Json(ScheduleRunDetail { run: r, eval_runs }))
+}
+
+/// Starts a schedule's command now, as the operator, and records it like a scheduled run (with
+/// its retries). Answers at once with the first attempt's id; the run is followed with
+/// `GET schedules/{name}/runs/{id}`. Refused while a run of the schedule is going.
+async fn run_schedule(
+    State(s): State<Arc<AppState>>,
+    Path(name): Path<String>,
+    headers: HeaderMap,
+    bytes: axum::body::Bytes,
+) -> Result<Response, ApiError> {
+    crate::from_a_client(&headers, "schedule runs")?;
+    let _: Option<Value> = crate::admin_api::body(&bytes)?;
+    let cfg = s
+        .config
+        .schedule
+        .iter()
+        .find(|c| c.name == name)
+        .cloned()
+        .ok_or_else(|| not_found(format!("no schedule named {name} in the configuration")))?;
+    s.records.refresh().await?;
+    if let Some(r) = evals::schedule_runs(&*s.records, &name)
+        .await?
+        .into_iter()
+        .find(|r| r.status == evals::ScheduleRunStatus::Running)
+    {
+        return Err(ApiError::new(
+            StatusCode::CONFLICT,
+            format!(
+                "schedule {name} is running now (run {}); start it again once that run ends",
+                r.id
+            ),
+        ));
+    }
+    let first = crate::scheduler::start_now(s.clone(), cfg).await;
+    let location = format!("/api/v1/schedules/{name}/runs/{}", first.id);
+    let mut res = (
+        StatusCode::ACCEPTED,
+        Json(ScheduleRunStarted {
+            schedule: name,
+            id: first.id,
+            status: first.status,
+        }),
+    )
+        .into_response();
+    if let Ok(v) = location.parse() {
+        res.headers_mut().insert(header::LOCATION, v);
+    }
+    Ok(res)
 }
 
 // ---------------------------------------------------------------------------------------------

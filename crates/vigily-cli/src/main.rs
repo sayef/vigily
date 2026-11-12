@@ -269,11 +269,7 @@ async fn main() -> Result<()> {
                 Err(e) => {
                     let msg = e.to_string();
                     if msg.contains("tag") && !*force {
-                        anyhow::bail!(
-                            "{msg}\nA storage tag keeps an older version that still holds deleted data, so nothing was purged. \
-                             Run `vigily runs purge --force` to delete such tags and purge, after checking that nothing needs that tag. \
-                             Tags on evaluation datasets never block a purge: they keep only their dataset's table."
-                        );
+                        anyhow::bail!(vigily_server::admin_api::tag_blocks_purge_message(&msg));
                     }
                     return Err(e.into());
                 }

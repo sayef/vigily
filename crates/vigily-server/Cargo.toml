@@ -26,12 +26,15 @@ chrono-tz.workspace = true
 croner.workspace = true
 toml.workspace = true
 reqwest.workspace = true
+# Streams NDJSON response bodies (already in the tree through axum and reqwest).
+futures-util = { version = "0.3", default-features = false }
 
 [target.'cfg(unix)'.dependencies]
 # Kill a timed-out schedule's whole process group.
 libc = "0.2"
 
 [dev-dependencies]
+async-trait.workspace = true
 tempfile.workspace = true
 tower.workspace = true
 http-body-util = "0.1"

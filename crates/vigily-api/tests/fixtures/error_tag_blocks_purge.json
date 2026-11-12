@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "tag_blocks_purge",
+    "message": "storage error: tag before-cleanup keeps a version with deleted rows\nA storage tag keeps an older version that still holds deleted data, so nothing was purged. Run `vigily runs purge --force` to delete such tags and purge, after checking that nothing needs that tag. Tags on evaluation datasets never block a purge: they keep only their dataset's table."
+  }
+}

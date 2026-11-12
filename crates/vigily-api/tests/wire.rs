@@ -76,3 +76,14 @@ fn errors_keep_their_wire_shape() {
     same::<vigily_api::LegacyErrorBody>("legacy_error_query");
     same::<vigily_api::Info>("info");
 }
+
+#[test]
+fn v1_answers_keep_their_wire_shape() {
+    same::<runs::RunsResponse<runs::RunSummary>>("runs_summary");
+    same::<runs::SeriesPoints>("series_points");
+    same::<runs::PurgeSummary>("purge");
+    same::<traces::TracingPolicy>("tracing_policy");
+    same::<traces::TracesDeleted>("traces_deleted");
+    same::<evals::ScheduleRunStarted>("schedule_run_started");
+    same::<vigily_api::ErrorBody>("error_tag_blocks_purge");
+}

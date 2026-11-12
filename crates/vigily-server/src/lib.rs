@@ -19,9 +19,11 @@
 //! header, a `Link` to its successor and the flat `{"error": "..."}` body of earlier releases.
 //! OpenTelemetry's `POST /v1/traces` stays at the root.
 
+pub mod admin_api;
 pub mod config;
 pub mod evals_api;
 pub mod monitor;
+pub mod runs_api;
 pub mod scheduler;
 pub mod traces_api;
 
@@ -31,14 +33,16 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use axum::extract::{Path, Query as QueryParams, State};
-use axum::http::{header, HeaderValue, StatusCode};
+use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use parking_lot::Mutex;
 use serde::Deserialize;
 use vigily_api::chart::{ChartGroup, ChartRequest, ChartResponse, ChartSeries};
-use vigily_api::runs::{DeleteRuns, Deleted, Meta, MetricStat, RunDetail, RunRow, RunsResponse};
+use vigily_api::runs::{
+    DeleteRuns, Deleted, Meta, MetricStat, RunDetail, RunFields, RunRow, RunSummary, RunsResponse,
+};
 use vigily_api::{code, ErrorBody, ErrorDetail, Info, LegacyErrorBody, API_VERSION};
 use vigily_core::chart::{aggregate, align, x_values, Xy};
 use vigily_core::{
@@ -200,7 +204,6 @@ impl ApiError {
     }
 
     /// The same error with a more specific code than its status implies.
-    #[allow(dead_code)]
     pub(crate) fn with_code(mut self, code: &'static str) -> Self {
         self.code = code;
         self
@@ -255,7 +258,8 @@ impl IntoResponse for ApiError {
 
 type ApiResult<T> = Result<Json<T>, ApiError>;
 
-/// The JSON API, relative to its root: mounted at `/api/v1`, and at `/api` as deprecated aliases.
+/// The JSON API of earlier releases, relative to its root: mounted at `/api/v1`, and at `/api` as
+/// deprecated aliases.
 fn api() -> Router<Arc<AppState>> {
     Router::new()
         .route("/health", get(|| async { "ok" }))
@@ -268,9 +272,20 @@ fn api() -> Router<Arc<AppState>> {
         .merge(traces_api::routes())
 }
 
+/// Routes added with `/api/v1`; the deprecated `/api` aliases do not serve them.
+fn v1_only() -> Router<Arc<AppState>> {
+    Router::new()
+        .route("/info", get(info))
+        .merge(runs_api::routes())
+        .merge(evals_api::v1_routes())
+        .merge(traces_api::v1_routes())
+        .merge(admin_api::routes())
+}
+
 /// The route groups this engine serves (`GET /api/v1/info`).
 pub const CAPABILITIES: &[&str] = &[
     "runs",
+    "points",
     "charts",
     "datasets",
     "evals",
@@ -279,6 +294,7 @@ pub const CAPABILITIES: &[&str] = &[
     "alerts",
     "traces",
     "otlp",
+    "admin",
 ];
 
 async fn info(State(s): State<Arc<AppState>>) -> Json<Info> {
@@ -297,7 +313,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .nest(
             "/api/v1",
             api()
-                .route("/info", get(info))
+                .merge(v1_only())
                 .layer(axum::middleware::from_fn(v1_errors)),
         )
         .nest("/api", api().layer(axum::middleware::from_fn(legacy)))
@@ -468,12 +484,60 @@ async fn local_only(req: axum::extract::Request, next: axum::middleware::Next) -
     }
 }
 
+/// Refuses requests a web page could send: anything but `Content-Type: application/json` (a
+/// page can send `text/plain` without a CORS preflight), and requests whose `Origin` is not this
+/// server's own (a browser always names the page's origin on a cross-origin POST). Every route
+/// that writes outside the web app's own forms (ingest, admin) checks this.
+pub(crate) fn from_a_client(headers: &HeaderMap, what: &str) -> Result<(), ApiError> {
+    let header = |n: header::HeaderName| headers.get(n).and_then(|v| v.to_str().ok());
+    let ct = header(header::CONTENT_TYPE)
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    if ct.starts_with("application/x-protobuf") || ct.starts_with("application/protobuf") {
+        return Err(ApiError::new(
+            StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            "vigily accepts OTLP/HTTP with JSON encoding only; set the exporter's protocol to http/json",
+        ));
+    }
+    let media = ct.split(';').next().unwrap_or("").trim();
+    if media != "application/json" {
+        return Err(ApiError::new(
+            StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            format!("send {what} with Content-Type: application/json"),
+        ));
+    }
+    if let Some(origin) = header(header::ORIGIN) {
+        let host = header(header::HOST).unwrap_or("");
+        let own = !host.is_empty()
+            && (origin == format!("http://{host}") || origin == format!("https://{host}"));
+        if !own {
+            return Err(ApiError::new(
+                StatusCode::FORBIDDEN,
+                format!("{what} are not accepted from web pages of another origin"),
+            ));
+        }
+    }
+    Ok(())
+}
+
 // ---------------------------------------------------------------------------------------------
 // Types
 
 fn row(e: &RunEntry, now: i64) -> RunRow {
-    let r = &e.run;
     RunRow {
+        run: summary_row(e, now),
+        params: e.flat.clone(),
+        metrics: e
+            .series
+            .iter()
+            .map(|s| (s.key.clone(), MetricStat::from(&s.summary)))
+            .collect(),
+    }
+}
+
+fn summary_row(e: &RunEntry, now: i64) -> RunSummary {
+    let r = &e.run;
+    RunSummary {
         id: r.id.clone(),
         name: r.display_name(),
         has_name: r.name.is_some(),
@@ -490,12 +554,6 @@ fn row(e: &RunEntry, now: i64) -> RunRow {
         last_seen: e.last_seen(),
         stale: e.stale(now),
         duration: r.duration_secs(now),
-        params: e.flat.clone(),
-        metrics: e
-            .series
-            .iter()
-            .map(|s| (s.key.clone(), MetricStat::from(&s.summary)))
-            .collect(),
     }
 }
 
@@ -542,12 +600,19 @@ struct RunsParams {
     desc: bool,
     #[serde(default)]
     archived: bool,
+    /// The first matching row to answer with.
+    #[serde(default)]
+    offset: usize,
+    /// At most this many rows (1 to 10 000); every matching row when not set.
+    limit: Option<usize>,
+    #[serde(default)]
+    fields: RunFields,
 }
 
 async fn runs(
     State(s): State<Arc<AppState>>,
     QueryParams(p): QueryParams<RunsParams>,
-) -> ApiResult<RunsResponse> {
+) -> Result<Response, ApiError> {
     if p.q.len() > MAX_QUERY {
         return Err(ApiError::new(
             StatusCode::BAD_REQUEST,
@@ -570,17 +635,35 @@ async fn runs(
         }
     }
     let snap = s.catalog.refresh_if_older(1_000_000).await?;
+    if p.limit.is_some_and(|l| l == 0 || l > 10_000) {
+        return Err(ApiError::new(
+            StatusCode::BAD_REQUEST,
+            "limit must be between 1 and 10 000",
+        ));
+    }
     let now = vigily_core::now_micros();
-    let rows = snap
-        .select(&query, p.sort.as_deref(), p.desc, p.archived)
+    let selected = snap.select(&query, p.sort.as_deref(), p.desc, p.archived);
+    let page = selected
         .iter()
-        .map(|e| row(e, now))
-        .collect();
-    Ok(Json(RunsResponse {
-        total: snap.runs.len(),
-        rows,
-        refreshed_at: snap.refreshed_at,
-    }))
+        .skip(p.offset)
+        .take(p.limit.unwrap_or(usize::MAX));
+    let (total, matched, refreshed_at) = (snap.runs.len(), selected.len(), snap.refreshed_at);
+    Ok(match p.fields {
+        RunFields::Full => Json(RunsResponse {
+            total,
+            matched,
+            rows: page.map(|e| row(e, now)).collect(),
+            refreshed_at,
+        })
+        .into_response(),
+        RunFields::Summary => Json(RunsResponse {
+            total,
+            matched,
+            rows: page.map(|e| summary_row(e, now)).collect(),
+            refreshed_at,
+        })
+        .into_response(),
+    })
 }
 
 async fn run(State(s): State<Arc<AppState>>, Path(id): Path<String>) -> ApiResult<RunDetail> {

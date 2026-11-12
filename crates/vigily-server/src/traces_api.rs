@@ -7,19 +7,22 @@
 //! | `GET /api/v1/traces`         | Trace summaries, newest first, filtered by run, model, status, time and name |
 //! | `GET /api/v1/traces/{id}`    | One trace with its spans |
 //! | `DELETE /api/v1/traces/{id}` | Deletes one trace |
+//! | `POST /api/v1/traces/delete` | Deletes traces by id, and erases them from storage with `erase` |
+//! | `GET /api/v1/tracing/policy` | The payload policy of a project, for clients to apply before sending |
 
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use axum::body::Bytes;
 use axum::extract::{DefaultBodyLimit, Path, Query as QueryParams, State};
-use axum::http::{header, HeaderMap, StatusCode};
+use axum::http::{HeaderMap, StatusCode};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::Deserialize;
 use serde_json::Value;
 use vigily_api::traces::{
-    IngestBody, RunRef, Totals, TraceDeleted, TraceResponse, TraceRow, TracesResponse,
+    DeleteTraces, IngestBody, Policy, RunRef, Totals, TraceDeleted, TraceResponse, TraceRow,
+    TracesDeleted, TracesResponse, TracingPolicy,
 };
 use vigily_core::traces::{self, IngestReport, SpanIn, TraceSummary};
 
@@ -39,6 +42,13 @@ pub fn routes() -> Router<Arc<AppState>> {
         )
         .route("/traces", get(list))
         .route("/traces/{id}", get(one).delete(delete))
+}
+
+/// Tracing routes added with `/api/v1`, which have no alias under `/api`.
+pub fn v1_routes() -> Router<Arc<AppState>> {
+    Router::new()
+        .route("/traces/delete", post(delete_many))
+        .route("/tracing/policy", get(policy))
 }
 
 /// OpenTelemetry's OTLP/HTTP endpoint, at the root where exporters expect it.
@@ -67,47 +77,12 @@ async fn store(s: &AppState, spans: Vec<SpanIn>) -> Result<IngestReport, ApiErro
     Ok(report)
 }
 
-/// Refuses requests a web page could send: anything but `Content-Type: application/json` (a
-/// page can send `text/plain` without a CORS preflight), and requests whose `Origin` is not this
-/// server's own (a browser always names the page's origin on a cross-origin POST).
-fn from_a_client(headers: &HeaderMap) -> Result<(), ApiError> {
-    let header = |n: header::HeaderName| headers.get(n).and_then(|v| v.to_str().ok());
-    let ct = header(header::CONTENT_TYPE)
-        .unwrap_or("")
-        .to_ascii_lowercase();
-    if ct.starts_with("application/x-protobuf") || ct.starts_with("application/protobuf") {
-        return Err(ApiError::new(
-            StatusCode::UNSUPPORTED_MEDIA_TYPE,
-            "vigily accepts OTLP/HTTP with JSON encoding only; set the exporter's protocol to http/json",
-        ));
-    }
-    let media = ct.split(';').next().unwrap_or("").trim();
-    if media != "application/json" {
-        return Err(ApiError::new(
-            StatusCode::UNSUPPORTED_MEDIA_TYPE,
-            "send spans with Content-Type: application/json",
-        ));
-    }
-    if let Some(origin) = header(header::ORIGIN) {
-        let host = header(header::HOST).unwrap_or("");
-        let own = !host.is_empty()
-            && (origin == format!("http://{host}") || origin == format!("https://{host}"));
-        if !own {
-            return Err(ApiError::new(
-                StatusCode::FORBIDDEN,
-                "spans are not accepted from web pages of another origin",
-            ));
-        }
-    }
-    Ok(())
-}
-
 async fn ingest(
     State(s): State<Arc<AppState>>,
     headers: HeaderMap,
     body: Bytes,
 ) -> ApiResult<IngestReport> {
-    from_a_client(&headers)?;
+    crate::from_a_client(&headers, "spans")?;
     let body: IngestBody = serde_json::from_slice(&body)
         .map_err(|e| bad(format!("expected {{\"spans\": [...]}}: {e}")))?;
     Ok(Json(store(&s, body.spans).await?))
@@ -119,7 +94,7 @@ async fn ingest_otlp(
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<Json<Value>, ApiError> {
-    from_a_client(&headers)?;
+    crate::from_a_client(&headers, "spans")?;
     let v: Value = serde_json::from_slice(&body).map_err(|e| bad(format!("not JSON: {e}")))?;
     let spans = traces::from_otlp(&v)?;
     store(&s, spans).await?;
@@ -310,4 +285,69 @@ async fn delete(State(s): State<Arc<AppState>>, Path(id): Path<String>) -> ApiRe
     *s.traces_cache.lock() = None;
     *s.traces_count.lock() = None;
     Ok(Json(TraceDeleted { deleted }))
+}
+
+/// Deletes traces by id; with `erase`, purges storage afterwards so their spans are erased from the
+/// files too (as `vigily traces delete --erase` does).
+async fn delete_many(
+    State(s): State<Arc<AppState>>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> ApiResult<TracesDeleted> {
+    crate::from_a_client(&headers, "admin requests")?;
+    let req: DeleteTraces = crate::admin_api::body(&body)?;
+    if req.ids.is_empty() || req.ids.len() > 10_000 {
+        return Err(bad("give between 1 and 10 000 trace ids"));
+    }
+    let mut deleted = 0;
+    let mut missing = Vec::new();
+    {
+        let _one_at_a_time = s.ingest_lock.lock().await;
+        for id in &req.ids {
+            if traces::delete(&*s.records, id).await? {
+                deleted += 1;
+            } else {
+                missing.push(id.clone());
+            }
+        }
+    }
+    *s.traces_cache.lock() = None;
+    *s.traces_count.lock() = None;
+    let purge = if req.erase {
+        Some(crate::admin_api::run_purge(&s, req.force).await?)
+    } else {
+        None
+    };
+    Ok(Json(TracesDeleted {
+        deleted,
+        missing,
+        purge,
+    }))
+}
+
+#[derive(Deserialize)]
+struct PolicyParams {
+    project: Option<String>,
+}
+
+async fn policy(
+    State(s): State<Arc<AppState>>,
+    QueryParams(p): QueryParams<PolicyParams>,
+) -> ApiResult<TracingPolicy> {
+    let t = &s.config.tracing;
+    let project = p.project.filter(|p| !p.is_empty());
+    let (payloads, max_field_bytes) = t.policy(project.as_deref());
+    let (strict, strict_bytes) = t.strictest();
+    Ok(Json(TracingPolicy {
+        project,
+        policy: Policy {
+            payloads,
+            max_field_bytes,
+        },
+        unknown_project: Policy {
+            payloads: strict,
+            max_field_bytes: strict_bytes,
+        },
+        currency: t.currency.clone(),
+    }))
 }
