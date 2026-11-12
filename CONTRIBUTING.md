@@ -31,8 +31,7 @@ Cargo builds from git; the `version` is what crates.io will use once kv0 is publ
 `cargo deny` from treating the dependency as a wildcard. `deny.toml` allows this one git source.
 
 `Cargo.lock` pins the exact commit, so every build uses the same kv0 until someone runs
-`cargo update -p kv0`. While kv0 is private, `.cargo/config.toml` makes cargo fetch with the git
-CLI so your usual GitHub credential helper (for example `gh auth setup-git`) applies.
+`cargo update -p kv0`.
 
 To work on vigily and kv0 together, point cargo at a local checkout without editing `Cargo.toml`;
 keep this in your own, uncommitted `~/.cargo/config.toml` or pass it on the command line:
@@ -125,7 +124,6 @@ Nothing is published to crates.io or PyPI: kv0 is not on crates.io yet.
 
 What the workflows need:
 
-- `KV0_TOKEN` (secret): a token that can read `sayef/kv0`, while kv0 is private.
 - `RELEASE_PLZ_TOKEN` (secret, optional): a GitHub App token or fine-grained token with contents and
   pull-request write access, so the release pull request gets CI runs (one opened with the
   workflow's own token does not).

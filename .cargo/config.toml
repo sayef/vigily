@@ -1,3 +1,0 @@
-[net]
-# kv0 is a private repository for now: fetch it with the git CLI so its credential helper applies.
-git-fetch-with-cli = true

@@ -97,11 +97,10 @@ Each release publishes a multi-platform image (amd64 and arm64) as `ghcr.io/saye
 docker compose up -d
 ```
 
-`compose.dev.yaml` builds the image from a checkout instead; building needs read access to kv0, a
-private git dependency for now, and the token reaches only the dependency fetch:
+`compose.dev.yaml` builds the image from a checkout instead:
 
 ```bash
-GH_TOKEN=$(gh auth token) docker compose -f compose.yaml -f compose.dev.yaml up -d --build
+docker compose -f compose.yaml -f compose.dev.yaml up -d --build
 ```
 
 To log runs from scripts on the same machine, keep the data in a directory you own instead of the

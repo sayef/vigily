@@ -3,7 +3,7 @@
 # ghcr.io/sayef/vigily:v0.2.0, or vigily:local from scripts/docker-local.sh.
 #
 # To build the image from this checkout instead, add compose.dev.yaml:
-#   GH_TOKEN=$(gh auth token) docker compose -f compose.yaml -f compose.dev.yaml up -d --build
+#   docker compose -f compose.yaml -f compose.dev.yaml up -d --build
 #
 # To log runs from scripts on this machine, keep the data in a directory here instead of a volume,
 # owned by you, and point the SDK at it:

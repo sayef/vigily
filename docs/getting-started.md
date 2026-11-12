@@ -72,12 +72,10 @@ Or without Compose:
 docker run -d -p 127.0.0.1:7600:7600 -v vigily:/data ghcr.io/sayef/vigily:latest
 ```
 
-To build the image from the checkout instead, add `compose.dev.yaml`. Building reads kv0, a private
-git dependency for now, with a GitHub token passed as a BuildKit secret; it is used only to fetch
-dependencies and is not stored in the image.
+To build the image from the checkout instead, add `compose.dev.yaml`:
 
 ```bash
-GH_TOKEN=$(gh auth token) docker compose -f compose.yaml -f compose.dev.yaml up -d --build
+docker compose -f compose.yaml -f compose.dev.yaml up -d --build
 ```
 
 Open <http://localhost:7600>. The container runs as an unprivileged user (uid 10001) and keeps
