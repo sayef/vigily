@@ -1,0 +1,30 @@
+[
+  {
+    "id": "00001794498300556243-381f85",
+    "kind": "data_drift",
+    "severity": "warning",
+    "title": "Input feature length shifted on intent-clf-v1",
+    "detail": "The distribution of length moved against the baseline runs: PSI 0.61 (drift above 0.2).",
+    "suite": "916d93593f1a",
+    "run_id": "01a1d06ee5c1732fb3d654b9a0808e5b",
+    "schedule": "nightly-intents",
+    "created_at": 1794498300556243,
+    "acknowledged_at": null,
+    "dedupe": "data/916d93593f1a/01a1d06ee5c1732fb3d654b9a0808e5b/length",
+    "delivered": null
+  },
+  {
+    "id": "00001794498299720799-c8ced6",
+    "kind": "data_drift",
+    "severity": "warning",
+    "title": "Input feature length shifted on intent-clf-v2",
+    "detail": "The distribution of length moved against the baseline runs: PSI 0.61 (drift above 0.2).",
+    "suite": "a544aefba624",
+    "run_id": "01a1d06ee65e74ff9dbfb3ebd206d2fe",
+    "schedule": "nightly-intents",
+    "created_at": 1794498299720799,
+    "acknowledged_at": null,
+    "dedupe": "data/a544aefba624/01a1d06ee65e74ff9dbfb3ebd206d2fe/length",
+    "delivered": null
+  }
+]

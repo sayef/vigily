@@ -1,0 +1,104 @@
+[
+  {
+    "key": "a544aefba624",
+    "label": "intent-clf-v2",
+    "experiment": "support-intents-nightly",
+    "target": {
+      "model": "intent-clf-v2",
+      "endpoint": "https://models.example.com/intent-clf-v2"
+    },
+    "dataset": "support-intents",
+    "schedule": "nightly-intents",
+    "runs": 31,
+    "scores": [
+      "exact_match",
+      "valid_label"
+    ],
+    "latest": {
+      "run_id": "01a1d06ee65e74ff9dbfb3ebd206d2fe",
+      "name": "intent-clf-v2 2026-11-12 15:44",
+      "created_at": 1794498291294850,
+      "status": "finished",
+      "dataset_version": 2,
+      "schedule": "nightly-intents",
+      "scores": {
+        "exact_match": 0.8436213991769548,
+        "valid_label": 1.0
+      }
+    },
+    "baseline": {
+      "mode": "rolling",
+      "window": 7,
+      "runs": [],
+      "updated_at": 0
+    },
+    "behaviour": [
+      {
+        "score": "exact_match",
+        "drifted": true,
+        "delta": -0.11052322163433283,
+        "p": 0.00039148053212967326,
+        "regressions": 33
+      },
+      {
+        "score": "valid_label",
+        "drifted": false,
+        "delta": 0.0,
+        "p": null,
+        "regressions": 0
+      }
+    ],
+    "data": "drift"
+  },
+  {
+    "key": "916d93593f1a",
+    "label": "intent-clf-v1",
+    "experiment": "support-intents-nightly",
+    "target": {
+      "model": "intent-clf-v1",
+      "endpoint": "https://models.example.com/intent-clf-v1"
+    },
+    "dataset": "support-intents",
+    "schedule": "nightly-intents",
+    "runs": 31,
+    "scores": [
+      "exact_match",
+      "valid_label"
+    ],
+    "latest": {
+      "run_id": "01a1d06ee5c1732fb3d654b9a0808e5b",
+      "name": "intent-clf-v1 2026-11-12 15:44",
+      "created_at": 1794498291137025,
+      "status": "finished",
+      "dataset_version": 2,
+      "schedule": "nightly-intents",
+      "scores": {
+        "exact_match": 0.4444444444444444,
+        "valid_label": 1.0
+      }
+    },
+    "baseline": {
+      "mode": "rolling",
+      "window": 7,
+      "runs": [],
+      "updated_at": 0
+    },
+    "behaviour": [
+      {
+        "score": "exact_match",
+        "drifted": false,
+        "delta": 0.0023515579071134675,
+        "p": 0.0022784985190922313,
+        "regressions": 0
+      },
+      {
+        "score": "valid_label",
+        "drifted": false,
+        "delta": 0.0,
+        "p": null,
+        "regressions": 0
+      }
+    ],
+    "data": "drift"
+  }
+]

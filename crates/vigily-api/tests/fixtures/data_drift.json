@@ -1,0 +1,70 @@
+{
+  "run_id": "01a1d06ee65e74ff9dbfb3ebd206d2fe",
+  "baseline_runs": [
+    "01a1d06ed3267577b5bb05cb50936899",
+    "01a1d06ed43f7175a78e6b0ed4cc6354"
+  ],
+  "features": [
+    {
+      "feature": "length",
+      "kind": "numeric",
+      "n_baseline": 4200,
+      "n_current": 600,
+      "psi": 0.6070522614076996,
+      "ks": {
+        "d": 0.31214285714285717,
+        "p": 2.4282276409826222e-45
+      },
+      "js": null,
+      "chi_squared": null,
+      "level": "drift",
+      "note": null,
+      "bins": [
+        {
+          "label": "≤ 26",
+          "baseline": 0.10238095238095238,
+          "current": 0.05333333333333334
+        },
+        {
+          "label": "26–33",
+          "baseline": 0.11261904761904762,
+          "current": 0.06833333333333333
+        }
+      ]
+    },
+    {
+      "feature": "channel",
+      "kind": "categorical",
+      "n_baseline": 4200,
+      "n_current": 600,
+      "psi": null,
+      "ks": null,
+      "js": 0.0002616037792992137,
+      "chi_squared": {
+        "statistic": 0.7658112273304974,
+        "df": 2.0,
+        "p": 0.6818772561436965
+      },
+      "level": "stable",
+      "note": null,
+      "bins": [
+        {
+          "label": "chat",
+          "baseline": 0.45,
+          "current": 0.435
+        },
+        {
+          "label": "email",
+          "baseline": 0.3914285714285714,
+          "current": 0.41
+        }
+      ]
+    }
+  ],
+  "thresholds": {
+    "psi_moderate": 0.1,
+    "psi_drift": 0.2,
+    "js_moderate": 0.05,
+    "js_drift": 0.1
+  }
+}

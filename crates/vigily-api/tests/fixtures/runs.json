@@ -1,0 +1,102 @@
+{
+  "total": 106,
+  "rows": [
+    {
+      "id": "01a1d06dd2d1762eb65996f5dcee25fa",
+      "name": "assistant-traces",
+      "has_name": true,
+      "experiment": "support-bot",
+      "description": null,
+      "tags": [
+        "tracing"
+      ],
+      "status": "finished",
+      "kind": "training",
+      "target": null,
+      "archived": false,
+      "created_at": 1794325416863341,
+      "updated_at": 1794498220919209,
+      "ended_at": 1794498216863341,
+      "last_seen": 1794498220919209,
+      "stale": false,
+      "duration": 172800.0,
+      "params": {
+        "__system__.cpu_count": 20,
+        "__system__.git.branch": "main",
+        "__system__.git.commit": "main",
+        "__system__.machine": "x86_64",
+        "__system__.platform": "Linux-6.12.113+deb13-amd64-x86_64-with-glibc2.43",
+        "__system__.python": "3.13.18",
+        "__system__.vigily": "0.1.0-beta.1",
+        "assistant.model": "example-large",
+        "assistant.prompt": "support-v3",
+        "assistant.top_k": 4
+      },
+      "metrics": {}
+    },
+    {
+      "id": "01a1d06dce6072f6a34e307851edbac7",
+      "name": "bert-lr1e-05-seed1",
+      "has_name": true,
+      "experiment": "sst2-bert-base",
+      "description": null,
+      "tags": [],
+      "status": "finished",
+      "kind": "training",
+      "target": null,
+      "archived": false,
+      "created_at": 1794326916863341,
+      "updated_at": 1794498219638505,
+      "ended_at": 1794327609863341,
+      "last_seen": 1794498219638505,
+      "stale": false,
+      "duration": 693.0,
+      "params": {
+        "__system__.cpu_count": 20,
+        "__system__.git.branch": "main",
+        "__system__.git.commit": "main",
+        "__system__.machine": "x86_64",
+        "__system__.platform": "Linux-6.12.113+deb13-amd64-x86_64-with-glibc2.43",
+        "__system__.python": "3.13.18",
+        "__system__.vigily": "0.1.0-beta.1",
+        "hparams.batch_size": 32,
+        "hparams.epochs": 3,
+        "hparams.lr": 1e-05,
+        "hparams.max_len": 128,
+        "hparams.seed": 1,
+        "model.frozen_layers": 0,
+        "model.name": "bert-base-uncased"
+      },
+      "metrics": {
+        "accuracy[val]": {
+          "last": 0.9112227092570075,
+          "min": 0.7728459120361142,
+          "max": 0.9192895924732892,
+          "count": 12,
+          "last_step": 6300,
+          "min_step": 525,
+          "max_step": 5250
+        },
+        "f1[val]": {
+          "last": 0.9067250243033569,
+          "min": 0.7680056617733113,
+          "max": 0.9067250243033569,
+          "count": 12,
+          "last_step": 6300,
+          "min_step": 525,
+          "max_step": 6300
+        },
+        "loss[train]": {
+          "last": 0.1980869651833449,
+          "min": 0.023409369016389375,
+          "max": 0.8083590406069189,
+          "count": 421,
+          "last_step": 6300,
+          "min_step": 6285,
+          "max_step": 0
+        }
+      }
+    }
+  ],
+  "refreshed_at": 1794498321623807
+}

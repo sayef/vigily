@@ -1,0 +1,18 @@
+[
+  {
+    "name": "support-intents",
+    "description": "Support messages labelled with one of five intents, in English, German and French",
+    "created_at": 1794498282836775,
+    "updated_at": 1794498285420086,
+    "latest": 2,
+    "items": 243
+  },
+  {
+    "name": "sst2-test",
+    "description": "Synthetic movie-review sentences with a positive or negative label",
+    "created_at": 1794498220209507,
+    "updated_at": 1794498220209507,
+    "latest": 1,
+    "items": 192
+  }
+]

@@ -1,0 +1,188 @@
+{
+  "key": "a544aefba624",
+  "label": "intent-clf-v2",
+  "experiment": "support-intents-nightly",
+  "target": {
+    "model": "intent-clf-v2",
+    "endpoint": "https://models.example.com/intent-clf-v2"
+  },
+  "dataset": "support-intents",
+  "schedule": "nightly-intents",
+  "scores": [
+    "exact_match",
+    "valid_label"
+  ],
+  "runs": [
+    {
+      "run_id": "01a1d06ec648760db308c30da0707fbb",
+      "name": "intent-clf-v2 2026-10-14",
+      "created_at": 1791936090000000,
+      "status": "finished",
+      "dataset_version": 1,
+      "schedule": "nightly-intents",
+      "scores": {
+        "exact_match": 0.9377777777777778,
+        "valid_label": 1.0
+      }
+    },
+    {
+      "run_id": "01a1d06ec711775487bf13740edad2c3",
+      "name": "intent-clf-v2 2026-10-15",
+      "created_at": 1792022490000000,
+      "status": "finished",
+      "dataset_version": 1,
+      "schedule": "nightly-intents",
+      "scores": {
+        "exact_match": 0.9466666666666667,
+        "valid_label": 1.0
+      }
+    }
+  ],
+  "baseline": {
+    "mode": "rolling",
+    "window": 7,
+    "runs": [],
+    "updated_at": 0
+  },
+  "config": {
+    "alpha": 0.01,
+    "min_effect": 0.02
+  },
+  "history": {
+    "exact_match": [
+      {
+        "run_id": "01a1d06ec648760db308c30da0707fbb",
+        "created_at": 1791936090000000,
+        "value": 0.9377777777777778,
+        "baseline_mean": null,
+        "baseline_low": null,
+        "baseline_high": null,
+        "drifted": false,
+        "p": null,
+        "regressions": 0
+      },
+      {
+        "run_id": "01a1d06ec711775487bf13740edad2c3",
+        "created_at": 1792022490000000,
+        "value": 0.9466666666666667,
+        "baseline_mean": 0.9377777777777778,
+        "baseline_low": 0.9377777777777778,
+        "baseline_high": 0.9377777777777778,
+        "drifted": false,
+        "p": 0.6379347725472038,
+        "regressions": 7
+      }
+    ],
+    "valid_label": [
+      {
+        "run_id": "01a1d06ec648760db308c30da0707fbb",
+        "created_at": 1791936090000000,
+        "value": 1.0,
+        "baseline_mean": null,
+        "baseline_low": null,
+        "baseline_high": null,
+        "drifted": false,
+        "p": null,
+        "regressions": 0
+      },
+      {
+        "run_id": "01a1d06ec711775487bf13740edad2c3",
+        "created_at": 1792022490000000,
+        "value": 1.0,
+        "baseline_mean": 1.0,
+        "baseline_low": 1.0,
+        "baseline_high": 1.0,
+        "drifted": false,
+        "p": null,
+        "regressions": 0
+      }
+    ]
+  },
+  "selected": "01a1d06ee65e74ff9dbfb3ebd206d2fe",
+  "drift": [
+    {
+      "score": "exact_match",
+      "run_id": "01a1d06ee65e74ff9dbfb3ebd206d2fe",
+      "baseline_runs": [
+        "01a1d06ed62a7707a19aa51c0d2c2190",
+        "01a1d06ed72f7354bcb6627362c29bcb"
+      ],
+      "higher_is_better": true,
+      "paired": true,
+      "n_current": 243,
+      "n_baseline": 243,
+      "current_mean": 0.8436213991769548,
+      "baseline_mean": 0.9541446208112879,
+      "baseline_std": 0.1517211545355307,
+      "delta": -0.11052322163433283,
+      "ci": [
+        -0.15696649029982365,
+        -0.0652557319223986
+      ],
+      "test": {
+        "name": "wilcoxon signed-rank",
+        "statistic": 561.0,
+        "z": -3.5457613993708224,
+        "p": 0.00039148053212967326
+      },
+      "worse": true,
+      "drifted": true,
+      "previous_run": "01a1d06edc267791ba3efc3e7d8e0a5b",
+      "regressions": [
+        {
+          "item_id": "acco-de-1-0",
+          "before": 1.0,
+          "after": 0.0
+        },
+        {
+          "item_id": "acco-de-1-1",
+          "before": 1.0,
+          "after": 0.0
+        }
+      ],
+      "fixed": [
+        {
+          "item_id": "acco-de-0-2",
+          "before": 0.0,
+          "after": 1.0
+        },
+        {
+          "item_id": "bill-en-1-0",
+          "before": 0.0,
+          "after": 1.0
+        }
+      ],
+      "regression_inputs": [
+        "Bitte E-Mail von Konto 1007 ändern",
+        "Bitte E-Mail von Konto 1044 ändern"
+      ]
+    },
+    {
+      "score": "valid_label",
+      "run_id": "01a1d06ee65e74ff9dbfb3ebd206d2fe",
+      "baseline_runs": [
+        "01a1d06edd3a72de9a7e60515098765e",
+        "01a1d06ede2572bebc47e1135b35a5a8"
+      ],
+      "higher_is_better": true,
+      "paired": true,
+      "n_current": 243,
+      "n_baseline": 243,
+      "current_mean": 1.0,
+      "baseline_mean": 1.0,
+      "baseline_std": 0.0,
+      "delta": 0.0,
+      "ci": [
+        0.0,
+        0.0
+      ],
+      "test": null,
+      "worse": false,
+      "drifted": false,
+      "previous_run": "01a1d06ee3b673b686fecccb5e09f68a",
+      "regressions": [],
+      "fixed": [],
+      "regression_inputs": []
+    }
+  ]
+}

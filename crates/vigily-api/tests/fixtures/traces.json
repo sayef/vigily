@@ -1,0 +1,87 @@
+{
+  "total": 48,
+  "rows": [
+    {
+      "id": "47fba86e2f647adb2c95b77d9fed05b7",
+      "name": "answer_question",
+      "root": "dd35b3488732d955",
+      "run_id": "01a1d06dd2d1762eb65996f5dcee25fa",
+      "eval_item": null,
+      "project": "support-bot",
+      "start_time": 1794494838851067,
+      "end_time": 1794494839887502,
+      "status": "ok",
+      "spans": 4,
+      "errors": 0,
+      "llm_calls": 2,
+      "input_tokens": 2398,
+      "output_tokens": 364,
+      "cached_tokens": 0,
+      "cost": 0.00057576,
+      "unpriced": 0,
+      "currency": "EUR",
+      "models": [
+        "example-embed",
+        "example-small"
+      ],
+      "payloads": "truncated",
+      "chunks": 1,
+      "run_name": "assistant-traces",
+      "duration_us": 1036435
+    },
+    {
+      "id": "f11e069f74021e2870b7439a029c4fc1",
+      "name": "answer_question",
+      "root": "bbbd62b01c59b304",
+      "run_id": "01a1d06dd2d1762eb65996f5dcee25fa",
+      "eval_item": null,
+      "project": "support-bot",
+      "start_time": 1794491310572797,
+      "end_time": 1794491312431071,
+      "status": "ok",
+      "spans": 4,
+      "errors": 0,
+      "llm_calls": 2,
+      "input_tokens": 1858,
+      "output_tokens": 389,
+      "cached_tokens": 1024,
+      "cost": 0.00721284,
+      "unpriced": 0,
+      "currency": "EUR",
+      "models": [
+        "example-embed",
+        "example-large"
+      ],
+      "payloads": "truncated",
+      "chunks": 1,
+      "run_name": "assistant-traces",
+      "duration_us": 1858274
+    }
+  ],
+  "totals": {
+    "traces": 48,
+    "errors": 5,
+    "input_tokens": 89996,
+    "output_tokens": 12864,
+    "cached_tokens": 14336,
+    "cost": {
+      "EUR": 0.25358674999999997
+    },
+    "unpriced": 0,
+    "p50_us": 2100174,
+    "p95_us": 2957569
+  },
+  "models": [
+    "example-embed",
+    "example-large"
+  ],
+  "runs": [
+    {
+      "id": "01a1d06dd2d1762eb65996f5dcee25fa",
+      "name": "assistant-traces"
+    }
+  ],
+  "payloads": "truncated",
+  "max_field_bytes": 4096,
+  "currency": "USD"
+}

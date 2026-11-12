@@ -1,0 +1,112 @@
+{
+  "a": {
+    "id": "01a1d06dd11173f1a444d7030613d052",
+    "name": "eval-bert-lr2e-05-seed1",
+    "created_at": 1794221736863341,
+    "target": {
+      "model": "bert-lr2e-05",
+      "dataset": "sst2-test"
+    },
+    "dataset": {
+      "digest": "258d1c2887b0e6c6",
+      "items": 192,
+      "name": "sst2-test",
+      "version": 1
+    }
+  },
+  "b": {
+    "id": "01a1d06dd1dd7039be1798fb8395eb9b",
+    "name": "eval-bert-lr2e-05-seed2",
+    "created_at": 1794308136863341,
+    "target": {
+      "model": "bert-lr2e-05",
+      "dataset": "sst2-test"
+    },
+    "dataset": {
+      "digest": "258d1c2887b0e6c6",
+      "items": 192,
+      "name": "sst2-test",
+      "version": 1
+    }
+  },
+  "counts": {
+    "both_failed": 1,
+    "both_passed": 161,
+    "fixed": 18,
+    "regressed": 12
+  },
+  "items": [
+    {
+      "item_id": "291b28386ef7",
+      "input": "The soundtrack wastes a good premise in its second half.",
+      "expected": "negative",
+      "a": {
+        "output": "negative",
+        "error": null,
+        "scores": [
+          {
+            "name": "exact_match",
+            "value": 1.0,
+            "passed": true,
+            "reason": null,
+            "evaluator": "exact_match",
+            "evaluator_version": "vigily/exact_match@1"
+          }
+        ],
+        "failed": false
+      },
+      "b": {
+        "output": "positive",
+        "error": null,
+        "scores": [
+          {
+            "name": "exact_match",
+            "value": 0.0,
+            "passed": false,
+            "reason": null,
+            "evaluator": "exact_match",
+            "evaluator_version": "vigily/exact_match@1"
+          }
+        ],
+        "failed": true
+      },
+      "change": "regressed"
+    },
+    {
+      "item_id": "41d1f4c9ec26",
+      "input": "This movie is sharp and funny despite a slow start.",
+      "expected": "positive",
+      "a": {
+        "output": "positive",
+        "error": null,
+        "scores": [
+          {
+            "name": "exact_match",
+            "value": 1.0,
+            "passed": true,
+            "reason": null,
+            "evaluator": "exact_match",
+            "evaluator_version": "vigily/exact_match@1"
+          }
+        ],
+        "failed": false
+      },
+      "b": {
+        "output": "negative",
+        "error": null,
+        "scores": [
+          {
+            "name": "exact_match",
+            "value": 0.0,
+            "passed": false,
+            "reason": null,
+            "evaluator": "exact_match",
+            "evaluator_version": "vigily/exact_match@1"
+          }
+        ],
+        "failed": true
+      },
+      "change": "regressed"
+    }
+  ]
+}
