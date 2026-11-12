@@ -7,7 +7,7 @@ tracking layer (`kv0::tracking`) through two adapters:
 
 ## Status
 
-vigily builds against kv0 `main`, which has every feature below except 7, 23 and 24. Items 16 onward
+vigily builds against kv0 `main`, which has every feature below except 7 and 23. Items 16 onward
 came up later, while I was building vigily on the first ones. Where vigily uses each:
 
 | Feature | Status | Where vigily uses it |
@@ -35,7 +35,7 @@ came up later, while I was building vigily on the first ones. Where vigily uses 
 | 21. Folding superseded run rows (kv0 #15) | Done | Heartbeat rows (one every 2 minutes per open run) are folded by the background optimize |
 | 22. A cheap check for the old shared records table | Done | `has_legacy_records()`: one directory listing on each open and in `vigily runs purge` |
 | 23. Several item ids, or an item-id prefix, per records query | Not done | Traces store spans in one row per batch and keep span ids in a row of their own; see below |
-| 24. Batched point writes, `track_many` | Not done | The engine's ingest writes a batch's points one `track` call at a time; see below |
+| 24. Batched point writes, `track_many` (kv0 #19) | Done | `RunWriter::track_batch` writes each ingested series batch with one `Run::track_many` call |
 
 The sections below are the original plans for each feature, kept for their reasoning.
 
@@ -205,3 +205,9 @@ today it loops over `track`, which hashes the series, takes the step map and the
 appends to the log once per point. For a million points a second across all runs the per-point
 cost has to go, and with steps assigned by the client the step bookkeeping reduces to a maximum
 per batch.
+
+**As built (kv0 #19).** `Run::track_many(name, context, &[TrackPoint])`, a `TrackPoint` being
+`{value, step, epoch, timestamp}` with the last three optional, instead of separate columns: kv0
+keeps `track`'s semantics (steps numbered when missing, the latest point of a step wins) and
+buffers a batch completely or not at all. vigily builds the points from its columns, one small
+allocation per batch.
