@@ -2,13 +2,14 @@
 
 A **trace** records one request through an LLM application: the retrieval, tool and model calls it
 made, how long each took, whether it failed, the tokens each model call used and what they cost.
-The Python SDK records traces with `vigily.trace(...)` and sends them to `vigily up`, which applies
+The Python SDK records traces with `vigily.trace(...)` and sends them to the engine, which applies
 the payload policy, prices every model call and stores the trace next to your runs. The web app lists
 traces under **Track › Traces** and shows each one as a waterfall of its spans.
 
 ## Record traces from Python
 
-Start the server (`vigily up`), then wrap the work you want to see:
+Wrap the work you want to see; spans go to the same engine as your runs (found or started as
+described in [Python SDK](python-sdk.md#configuration)):
 
 ```python
 import vigily
@@ -54,7 +55,7 @@ def answer(question: str, run: vigily.Run) -> str:
   attribute `items` and the return value as the output. The span is current only while the
   generator's own code runs, not in your loop between items.
 - **Processes.** A process forked after tracing started (multiprocessing with `fork`) starts with an
-  empty queue and its own export thread; spans queued before the fork are sent by the parent.
+  empty queue and its own sender thread; spans queued before the fork are sent by the parent.
 
 ### Token usage
 
@@ -68,21 +69,28 @@ an opt-in helper: vigily never patches or wraps a client library.
 
 ### Export
 
-Finished spans go into a queue; a background thread sends them in batches (256 spans, or after one
-second) to `POST /api/v1/traces/ingest`, so tracing never waits on the network. Queued spans are sent
-when the interpreter exits normally; call `vigily.tracing.flush()` before `os._exit` or when a
-short-lived worker must not lose its last spans. If the server cannot be reached, the batch is
-retried twice and then dropped with one warning on stderr: tracing never fails your program.
+Finished spans go into a queue; the background thread that sends your runs sends them in batches
+(256 spans, or after one second) to `POST /api/v1/traces/ingest`, so tracing never waits on the
+network. The queue holds at most 10 000 spans: when it is full, new spans are dropped with one
+warning, so tracing never slows your program. Queued spans are sent when the interpreter exits
+normally; call `vigily.tracing.flush()` (or `vigily.flush()`) before `os._exit` or when a
+short-lived worker must not lose its last spans. While the engine cannot be reached, spans are
+retried and then kept in the [spool](python-sdk.md#sending-and-the-spool) with your runs' batches,
+after redaction and the engine's payload policy.
 
-The server needs a token for spans like for any other write ([Tokens](configuration.md#tokens)):
-set `VIGILY_TOKEN` to the local token from the link `vigily up` prints, or on a shared server to an
-access token with the `ingest` scope. Scheduled commands get one automatically. Without it the
-server answers 401, and the exporter warns once and drops the batch.
+`vigily.tracing.export(spans)` queues finished spans you built yourself (dicts with `trace_id`,
+`span_id`, `name`, `start_time` and `end_time` in microseconds, ...), as an importer would; they are
+redacted and sent like recorded ones.
+
+The engine needs a token for spans like for any other write ([Tokens](configuration.md#tokens)): a
+local engine's own token is used without configuration; on a shared server set `VIGILY_TOKEN` to an
+access token with the `read` and `ingest` scopes (`read` fetches the payload policy). Scheduled
+commands get one automatically. When the server refuses the token (401), the sender warns once.
 
 | Setting | Default |
 |---|---|
-| `vigily.tracing.configure(url=...)` or `VIGILY_URL` | `http://127.0.0.1:7600` |
-| `configure(token=...)` or `VIGILY_TOKEN` | none: the token spans are sent with (`Authorization: Bearer`) |
+| `vigily.tracing.configure(url=...)` or `VIGILY_URL` | the engine of the span's run, else of the repository |
+| `configure(token=...)` or `VIGILY_TOKEN` | a local engine's own token: the token spans are sent with (`Authorization: Bearer`) |
 | `configure(enabled=False)` or `VIGILY_TRACING=off` | on |
 | `configure(batch_size=, flush_interval=, max_queue=)` | 256 spans, 1 s, 10 000 queued spans |
 
@@ -176,14 +184,19 @@ is kept; it does **not** remove personal data from the first 4 KiB. Use `metadat
 prompts you must not keep, and the redaction hook below to remove what you can recognise. Spans of
 a trace whose project is not known yet (no project and no run named so far) get the strictest mode
 and field limit of the global and project policies, so nothing is kept that a project's policy
-would not allow. The mode is applied when a span arrives and is recorded with it, and the trace page says which mode applied
+would not allow. The SDK fetches the policy of a span's project (`GET /api/v1/tracing/policy`) and
+applies it before the span leaves your process or goes to the spool, so a payload the engine would
+not store is never sent; while it cannot fetch the policy, it applies the default (`truncated`, 4 KiB
+per field). The engine applies the mode again when a span arrives and records it with the span, and
+the trace page says which mode applied
 (for example "Inputs and outputs are not stored for this project"). Changing the mode does not
 rewrite traces already stored.
 
 ### Redaction in your process
 
-`vigily.tracing.set_redactor(fn)` calls `fn` on every finished span before it leaves your process.
-Return the span, changed as needed, or `None` to drop it:
+`vigily.tracing.set_redactor(fn)` calls `fn` on every finished span before it is queued, so before
+it leaves your process or reaches the spool. Return the span, changed as needed, or `None` to drop
+it:
 
 ```python
 import re
@@ -229,7 +242,9 @@ it as a second line after choosing what to trace and which payload mode to use.
 
 ### Where traces travel
 
-Spans go from your process to the server over HTTP; `vigily up` listens on `127.0.0.1` by default.
+Spans go from your process to the engine over HTTP; a local engine listens on `127.0.0.1`. Spans
+the SDK could not send yet wait in its spool, a directory only you can read, already redacted and
+filtered by the payload policy.
 If you serve vigily to a team, put it behind your own proxy with TLS and sign-in
 ([serving to a team](storage.md#serving-to-a-team)): the ingest endpoint accepts spans from anyone
 who can reach it. vigily never sends trace data anywhere else.

@@ -1,7 +1,8 @@
 # Getting started
 
 There are three ways to run vigily: install the prebuilt binary, run it in Docker, or build it from
-the repository. The Python SDK is not on PyPI yet, so logging runs from Python needs the build.
+the repository. The Python SDK is pure Python and talks to the engine over HTTP; it is not on PyPI
+yet, so install it from a checkout (`pip install ./vigily` or `uv sync` in the repository).
 
 ## Install
 
@@ -34,8 +35,8 @@ On other systems (musl-based Linux such as Alpine, FreeBSD, Windows), build from
 
 ## Build from source
 
-This takes a few minutes the first time and gives you the `vigily` binary and the `vigily` Python
-package.
+This takes a few minutes the first time and gives you the `vigily` and `vigily-engine` binaries and
+the `vigily` Python package.
 
 ### Requirements
 
@@ -55,8 +56,10 @@ git clone https://github.com/sayef/vigily && cd vigily
 (cd crates/vigily-ui && npm ci && npm run build)
 cargo build --release -p vigily-cli -p vigily-server # target/release/vigily and vigily-engine
 
-# The Python SDK, into this repository's virtual environment.
-uv sync --no-install-project && uv run --no-sync maturin develop --release
+# The Python SDK (pure Python), into this repository's virtual environment. It starts
+# vigily-engine from PATH (or VIGILY_ENGINE) when no engine serves the repository.
+uv sync
+export PATH="$PWD/target/release:$PATH"
 ```
 
 ## Run with Docker
@@ -96,23 +99,17 @@ The port is published on `127.0.0.1` only. Every request needs a token; for anyt
 machine, create scoped tokens for people and scripts ([Tokens](guides/configuration.md#tokens)) and
 put TLS in front of vigily.
 
-The Python SDK writes to the repository directly, so a training script has to reach the same
-storage as the server. On one machine, keep the data in a directory you own instead of the volume,
-and run the container with your user and group ids so the files it writes stay yours:
+Training scripts log to the container over HTTP. Create a token for them with the `read` and
+`ingest` scopes, and point the SDK at the server:
 
 ```bash
-mkdir -p vigily-data
-VIGILY_DATA=./vigily-data VIGILY_UID=$(id -u) VIGILY_GID=$(id -g) docker compose up -d
-VIGILY_REPO=./vigily-data/repo python train.py      # appears in the web app as it logs
+docker compose exec vigily vigily --url http://127.0.0.1:7600 --token "$VIGILY_ADMIN_TOKEN" \
+  tokens create training --scope read --scope ingest
+VIGILY_URL=http://127.0.0.1:7600 VIGILY_TOKEN=vgy_... python train.py   # appears in the web app as it logs
 ```
 
-Create the directory first: a missing one is created by Docker and owned by root. Across machines,
-point both at object storage instead: set `VIGILY_SERVER_REPO=s3://bucket/prefix` (or `gs://`,
-`az://`) for the container and `VIGILY_REPO` to the same URI for your scripts, with the usual cloud
-credentials in both.
-
-LLM traces need no shared storage: they arrive over HTTP (see [LLM tracing](guides/tracing.md)).
-The CLI is in the image too: `docker compose exec vigily vigily runs` lists the runs.
+LLM traces travel the same way (see [LLM tracing](guides/tracing.md)). The CLI is in the image
+too: `docker compose exec vigily vigily runs` lists the runs.
 
 Scheduled evaluations run their commands inside the server's container, which has no Python. For
 schedules, build your own image on top of this one with your evaluation's dependencies, or run
@@ -130,11 +127,12 @@ toy classifiers, with drift starting on day 20:
 ```bash
 uv run --no-sync python examples/demo.py          # training runs, into ./.vigily
 uv run --no-sync python examples/eval_demo.py     # datasets, evaluations, drift
-target/release/vigily up --config examples/vigily.toml
+vigily stop                                       # the engine the scripts started for ./.vigily
+vigily up --config examples/vigily.toml           # serve it with the demo's schedules and prices
 ```
 
 Open the link `vigily up` prints (`http://127.0.0.1:7600/?token=...`): the token signs your
-browser in and is kept per repository, so the link stays the same. One server runs per
+browser in and is kept per repository, so the link stays the same. One engine runs per
 repository: a second `vigily up` on the same one says where the first is. Start on **Runs**, select a few runs with `x` and press `c` to compare
 their curves; then open **Drift** to see what the nightly evaluations found.
 
@@ -150,8 +148,10 @@ with Run(experiment="cifar10", name="resnet18-lr3e-3") as run:
         run.track(loss, name="loss", step=step, context={"subset": "train"})
 ```
 
-The run lands in `./.vigily` unless you pass `repo=` or set `VIGILY_REPO`. `vigily up` in the same
-directory shows it; a running server picks up new runs on its own.
+The run lands in `./.vigily` unless you pass `repo=` or set `VIGILY_REPO`. The SDK sends it to the
+engine that serves that repository, and starts one in the background when none does (it stops
+after 30 minutes without use); `vigily open` in the same directory opens the web app on it. With
+`VIGILY_URL` and `VIGILY_TOKEN` set, runs go to that engine instead, such as a team server.
 
 ## Next
 

@@ -11,9 +11,10 @@ for you (see [Storage dependency](#storage-dependency)).
 
 ```bash
 (cd crates/vigily-ui && npm ci && npm run build)   # before cargo: build.rs embeds dist
-cargo build
-uv sync --no-install-project && uv run --no-sync maturin develop
-uv run --no-sync python examples/demo.py && target/debug/vigily up
+cargo build                                        # target/debug/vigily and vigily-engine
+uv sync                                            # the Python SDK (pure Python), editable
+VIGILY_ENGINE=target/debug/vigily-engine uv run --no-sync python examples/demo.py
+target/debug/vigily open                           # the engine the demo started
 ```
 
 For UI work, `npm run dev` in `crates/vigily-ui` serves the app with hot reload on
@@ -51,10 +52,10 @@ Run these before opening a pull request; CI runs the same:
 
 ```bash
 cargo fmt --all && cargo clippy --workspace --all-targets -- -D warnings
-cargo nextest run --workspace --exclude vigily-py        # or cargo test
+cargo nextest run --workspace                          # or cargo test
 (cd crates/vigily-ui && npm run lint && npm run typecheck && npm run build)
 uv run --no-sync ruff check && uv run --no-sync ruff format --check
-uv run --no-sync maturin develop && uv run --no-sync pytest
+uv run --no-sync pytest     # builds target/debug/vigily-engine when missing; starts engines itself
 cargo deny check --warn unmaintained                     # advisories, licences, sources
 uvx --with-requirements docs/requirements.txt mkdocs build --strict
 ```
@@ -122,8 +123,8 @@ A tag pushed by hand (`git tag v0.1.0 && git push origin v0.1.0`) goes through s
 well. Tags with a suffix, such as `v0.1.0-beta.2` or `v0.1.0-rc.1`, stay pre-releases and never
 become `latest`: the release, the `X.Y` image tag and the `latest` image tag are left alone.
 
-**PyPI.** Once the binaries and wheels built, the Release workflow's `pypi` job uploads the wheels
-and the sdist to PyPI as `vigily`, pre-releases included: `v0.1.0-beta.1` becomes `0.1.0b1`,
+**PyPI.** Once the binaries and the Python package built, the Release workflow's `pypi` job uploads
+the SDK's pure-Python wheel and its sdist to PyPI as `vigily`, pre-releases included: `v0.1.0-beta.1` becomes `0.1.0b1`,
 which PyPI marks as a pre-release and pip installs only with `--pre` or an exact version. It uses
 trusted publishing, with no token. The trusted publisher on PyPI is: project `vigily`, owner
 `sayef`, repository `vigily`, workflow `release.yml`, environment `pypi`. Renaming the workflow file
@@ -131,8 +132,7 @@ or the environment breaks the upload until the publisher is updated to match.
 
 **crates.io.** Nothing is published there yet: kv0 is not on crates.io. Once `kv0 0.1.0-beta.1` is:
 
-1. In `release-plz.toml`, set `publish = true` and remove `git_only`. `vigily-py` keeps
-   `publish = false` in its `Cargo.toml` (it ships as a wheel); every other crate is published.
+1. In `release-plz.toml`, set `publish = true` and remove `git_only`. Every crate is published.
 2. Keep the kv0 requirement in `Cargo.toml` at the exact pre-release version (`0.1.0-beta.1`);
    publishing ignores the git source.
 3. The `CARGO_REGISTRY_TOKEN` repository secret already exists. Pass it to the `release` step in

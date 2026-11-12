@@ -18,7 +18,6 @@ Object storage support is compiled in on request, which keeps the default binary
 
 ```bash
 cargo build --release -p vigily-server --features s3           # or gcs, azure, or several
-uv run --no-sync maturin develop --release --features s3         # the Python SDK, likewise
 ```
 
 Credentials come from the environment, the way each cloud's tools expect them (for S3:

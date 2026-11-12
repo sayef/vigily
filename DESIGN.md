@@ -29,7 +29,7 @@ service; importing other trackers' repositories.
 | `vigily-server` | api, core, ui, axum | The HTTP surface and the `vigily-engine` binary; tests drive it in memory with `tower::oneshot` |
 | `vigily-ui` | nothing at runtime | `build.rs` embeds `dist`, so the binary carries the app |
 | `vigily-cli` | api (client) | The `vigily` binary: an HTTP client of the engine, without storage code (CI checks its tree) |
-| `vigily-py` | core, pyo3 | An abi3 extension (one wheel per platform for Python 3.11+) |
+| `python/vigily` | the standard library | The Python SDK: an HTTP client of the engine, one pure-Python wheel |
 
 ## Storage
 
@@ -444,9 +444,13 @@ where starting an engine would create an empty repository by accident.
 
 ## Python SDK
 
-A pyo3 extension (abi3, Python 3.11+) under a thin Python layer. Values cross the boundary as JSON
-text; contexts are cached per distinct dict, so `track` costs one Rust call. The GIL is released
-around every call that can do I/O. The SDK records the environment (Python, platform, CPU count,
+Pure Python (3.11+, standard library only), talking to the engine over HTTP. I moved it off the
+pyo3 extension because the wheel carried the whole storage engine (about 80 MB per platform), and
+because two writers of one repository (a training script and the server) had to share storage
+through bind mounts. Now the engine is the only writer and the wheel is about 60 kB. `track()`
+appends to columns in memory (about 1 µs) and a background thread sends batches; run ids, steps and
+timestamps are chosen in the process, so a batch sent twice stores nothing twice. When the engine is
+away, batches go to a spool on disk rather than being dropped. The SDK records the environment (Python, platform, CPU count,
 vigily version, git branch and commit) under the reserved parameter `__system__`; it records no
 user names, host names or paths. Metrics named `__system__/...` are shown on the run's System tab.
 

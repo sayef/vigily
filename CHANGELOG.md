@@ -107,8 +107,37 @@ The first release, published as betas (0.1.0-beta.N) before 0.1.0.
 - New commands: `vigily status`, `stop`, `open`, `env`, `tokens list|create|revoke` and
   `token rotate` (`POST /api/v1/auth/local-token/rotate`, admin), and global `--url` and `--token`
   options (`VIGILY_URL`, `VIGILY_TOKEN`) to use a team server.
+- `vigily.configure(url, token, project, offline)`, `vigily.flush(timeout)`, `Repo(url=...)`,
+  `Repo.results(run_id)` and `vigily.tracing.export(spans)` in the Python SDK; settings also from
+  `VIGILY_URL`, `VIGILY_TOKEN`, `VIGILY_PROJECT`, `VIGILY_OFFLINE`, `VIGILY_EXIT_TIMEOUT`,
+  `VIGILY_SPOOL_AFTER`, `VIGILY_SPOOL_MAX_MB` and `VIGILY_BUFFER_MB`.
+- An offline spool: batches the SDK cannot send (after two minutes without the engine, at exit, or
+  when the engine falls behind) go to gzip-compressed NDJSON files in `spool/<writer>/` under the
+  state directory (0600, written atomically), and are sent in order once the engine answers, by the
+  next process that reaches it, or with the new `vigily sync`. The spool has a size limit and never
+  deletes data.
 
 ### Changed
+
+- The Python SDK is pure Python (one `py3-none-any` wheel of about 60 kB, no dependencies) and talks
+  to the engine over `/api/v1` instead of writing storage in the process; the pyo3 extension and
+  the `vigily-py` crate are gone, and the package moves to `python/vigily`. It finds the
+  repository's engine like the command line, or starts `vigily-engine --detach` (install hint when
+  it is missing). `Run()` never waits for the network: run ids (UUIDv7), steps and timestamps are
+  assigned in the process, and a background thread sends an ordered log of operations in batches
+  (every second, 20 000 points or 4 MiB; points in columns; gzip; `Idempotency-Key` per batch),
+  retried with exponential backoff and full jitter, honouring `Retry-After`. `track()` waits up to
+  five seconds when the engine falls behind, then the batches go to the spool; nothing is dropped
+  without a message. Forked children log through their own sender; at exit the SDK finishes the
+  runs it started and sends what is queued for up to 30 seconds. Spans share the sender; the
+  redactor and the engine's payload policy (fetched per project) apply before a span is queued or
+  spooled. `RunDeletedError` surfaces on the next call after the engine reported the deletion, and
+  `Run.finish()` no longer waits for storage (`vigily.flush()` and `Repo` reads do).
+- The engine stores every explicit `heartbeat` operation (implicit ones stay at one per two
+  minutes), and `POST /api/v1/runs/{id}/resume` flushes the run first, so a run created a moment ago
+  can be resumed.
+- `examples/demo.py` sends its traces over HTTP (`vigily.tracing.export`); their example prices
+  moved to `examples/vigily.toml`.
 
 - `vigily` is now a client of the engine: every command but `up` goes through the HTTP API, and the
   binary no longer contains storage code (`vigily-core` and kv0 are out of its dependency tree).
