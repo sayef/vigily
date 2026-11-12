@@ -52,7 +52,7 @@ over the limit).
 | Endpoint | Notes |
 |---|---|
 | `GET /api/v1/health` | `ok` |
-| `GET /api/v1/info` | `{version, api_version: "v1", mode: "local", capabilities}` |
+| `GET /api/v1/info` | `{version, api_version: "v1", mode: "local" or "server", capabilities}` |
 | `GET /api/v1/meta` | counts, experiments, metric keys with run counts, parameter keys with kinds and distinct values |
 | `GET /api/v1/runs?q=&sort=&desc=&archived=&limit=&offset=&fields=` | matching rows, a page of them with `limit` and `offset`; `total` counts every run, `matched` the matching ones; `fields=summary` leaves out parameters and metric statistics; a query error is a 400 with `error.position` |
 | `GET /api/v1/runs/{id}/params` | the parameters as a nested object |
@@ -114,6 +114,19 @@ Write bodies may be gzip-compressed (`Content-Encoding: gzip`) and are limited t
 decompression (413 `too_large`). Ingest bodies in flight share a 256 MiB budget; above it ingest
 answers 503 `overloaded` with `Retry-After: 1`. Bodies over 1 MiB are decoded off the
 request-serving threads.
+
+Authentication (`auth.rs`): every request passes a guard that finds the caller from an
+`Authorization: Bearer` header or the `vigily_token` cookie and attaches an `AuthContext`
+(principal and scopes). Routes are built in groups by the scope they need (`Scoped`: open, `read`,
+`ingest`, `admin`), each group behind a `require(scope)` layer that answers 401 `unauthorized` or
+403 `forbidden`; the `/api` aliases and OTLP's `/v1/traces` go through the same groups. Open are
+`health`, `info`, `auth/me`, `auth/session` and the web app's files. Local mode accepts the
+repository's token (a file, 0600); server mode the admin token from the environment and stored
+tokens (`vgy_<id>_<secret>`, kept as `auth/token/<id>` with the secret's SHA-256, read through a
+30-second cache), plus in-memory tokens for scheduled commands. A cookie-authenticated write needs
+an `Origin` equal to the `Host`. `GET /?token=` in local mode sets the cookie and redirects (303).
+Routes: `GET /api/v1/auth/me`, `POST|DELETE /api/v1/auth/session`, `GET|POST /api/v1/auth/tokens`,
+`DELETE /api/v1/auth/tokens/{id}` (admin).
 
 Routes that write outside the web app's forms (the write routes above, span ingest, admin,
 deleting traces, starting a schedule) accept only `Content-Type: application/json` (ingest also

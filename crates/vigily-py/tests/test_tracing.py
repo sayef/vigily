@@ -16,6 +16,7 @@ class Collector:
 
     def __init__(self) -> None:
         self.spans: list[dict] = []
+        self.auth: list[str | None] = []
         self.lock = threading.Lock()
         outer = self
 
@@ -24,6 +25,7 @@ class Collector:
                 body = self.rfile.read(int(self.headers["content-length"]))
                 with outer.lock:
                     outer.spans.extend(json.loads(body)["spans"])
+                    outer.auth.append(self.headers.get("authorization"))
                 self.send_response(200)
                 self.send_header("content-type", "application/json")
                 self.end_headers()
@@ -48,6 +50,25 @@ def collector():
     tracing.set_redactor(None)
     tracing.flush()
     c.server.shutdown()
+
+
+def test_spans_are_sent_with_the_token(collector, monkeypatch):
+    monkeypatch.setenv("VIGILY_TOKEN", "token-from-env")
+    tracing.configure(collector.url)
+    with vigily.trace("from-env"):
+        pass
+    assert tracing.flush()
+    tracing.configure(collector.url, token="token-given")
+    with vigily.trace("given"):
+        pass
+    assert tracing.flush()
+    tracing.configure(token="")
+    monkeypatch.delenv("VIGILY_TOKEN")
+    tracing.configure(collector.url)
+    with vigily.trace("none"):
+        pass
+    assert tracing.flush()
+    assert collector.auth == ["Bearer token-from-env", "Bearer token-given", None]
 
 
 def test_nested_spans_share_a_trace_and_point_at_their_parent(collector):

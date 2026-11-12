@@ -26,6 +26,7 @@ pub mod query;
 pub mod records;
 pub mod stats;
 pub mod store;
+pub mod tokens;
 pub mod traces;
 
 pub use catalog::{Catalog, Column, RunEntry, Snapshot};

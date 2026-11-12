@@ -5,7 +5,8 @@
 //   vigily up                        # with the demo repository (examples/demo.py)
 //   npm run qa -- [out-dir]          # default: target/qa (not committed; see assets/src/screenshots.py)
 //
-// VIGILY_URL overrides the server (default http://127.0.0.1:7600). PLAYWRIGHT_CHROMIUM is a
+// VIGILY_URL overrides the server (default http://127.0.0.1:7600); VIGILY_TOKEN is its token (the
+// one in the link `vigily up` prints), sent with every request. PLAYWRIGHT_CHROMIUM is a
 // Chromium executable to use instead of Playwright's own download.
 
 import { mkdirSync, readdirSync } from "node:fs";
@@ -14,6 +15,7 @@ import { join, resolve } from "node:path";
 import { chromium } from "playwright";
 
 const BASE = process.env.VIGILY_URL ?? "http://127.0.0.1:7600";
+const AUTH = process.env.VIGILY_TOKEN ? { authorization: `Bearer ${process.env.VIGILY_TOKEN}` } : {};
 const OUT = resolve(process.argv[2] ?? join(import.meta.dirname, "../../../target/qa"));
 mkdirSync(OUT, { recursive: true });
 
@@ -33,7 +35,7 @@ function chromiumPath() {
   return undefined;
 }
 
-const api = async (path) => (await fetch(BASE + path)).json();
+const api = async (path) => (await fetch(BASE + path, { headers: AUTH })).json();
 const runs = (await api("/api/v1/runs")).rows;
 const longRun = runs.find((r) => r.name.endsWith("-long")) ?? runs[0];
 const failed = runs.find((r) => r.status === "failed") ?? runs[0];
@@ -88,7 +90,7 @@ const browser = await chromium.launch({ executablePath: chromiumPath() });
 const report = [];
 for (const theme of ["light", "dark"]) {
   for (const [vp, size] of viewports) {
-    const ctx = await browser.newContext({ viewport: size, colorScheme: theme, deviceScaleFactor: vp === "desktop" ? 1 : 2 });
+    const ctx = await browser.newContext({ extraHTTPHeaders: AUTH, viewport: size, colorScheme: theme, deviceScaleFactor: vp === "desktop" ? 1 : 2 });
     await ctx.addInitScript((t) => localStorage.setItem("vigily.theme", t), theme);
     if (cifar.length) await ctx.addInitScript((ids) => sessionStorage.setItem("vigily.selection", JSON.stringify(ids)), cifar.slice(0, 4));
     const page = await ctx.newPage();
@@ -144,7 +146,7 @@ for (const theme of ["light", "dark"]) {
 }
 // Keyboard only: every core task without the pointer.
 {
-  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const ctx = await browser.newContext({ extraHTTPHeaders: AUTH, viewport: { width: 1440, height: 900 } });
   const page = await ctx.newPage();
   const keys = [];
   const check = async (name, fn) => {
@@ -231,9 +233,9 @@ for (const theme of ["light", "dark"]) {
       { trace_id: id, span_id: "cy", parent_id: "cx", name: "qa_cycle_y", start_time: 500_500, end_time: 500_600 },
     ];
     for (let i = 0; i < 2500; i++) spans.push({ trace_id: id, span_id: `s${i}`, parent_id: "root", name: `qa_step_${i}`, start_time: 1_001_000 + i * 3000, end_time: 1_002_000 + i * 3000 });
-    const sent = await fetch(`${BASE}/api/v1/traces/ingest`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ spans }) });
+    const sent = await fetch(`${BASE}/api/v1/traces/ingest`, { method: "POST", headers: { ...AUTH, "content-type": "application/json" }, body: JSON.stringify({ spans }) });
     await check("Ingest takes a synthetic trace", () => sent.ok);
-    const csrf = await fetch(`${BASE}/api/v1/traces/ingest`, { method: "POST", headers: { "content-type": "text/plain" }, body: JSON.stringify({ spans }) });
+    const csrf = await fetch(`${BASE}/api/v1/traces/ingest`, { method: "POST", headers: { ...AUTH, "content-type": "text/plain" }, body: JSON.stringify({ spans }) });
     await check("Ingest refuses text/plain", () => csrf.status === 415);
     await page.goto(`${BASE}/traces/${id}`, { waitUntil: "networkidle" });
     const names = await page.locator("[role=option]").allInnerTexts();

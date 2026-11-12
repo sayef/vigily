@@ -182,12 +182,26 @@ interface ErrorBody {
   error?: { code?: string; message?: string; position?: number };
 }
 
+/** Fired when the server answers 401: the session cookie is missing or no longer valid. */
+export const UNAUTHORIZED_EVENT = "vigily:unauthorized";
+
+/** `GET /api/v1/auth/me`: who this browser is signed in as. */
+export interface Me {
+  authenticated: boolean;
+  principal: string | null;
+  scopes: ("read" | "ingest" | "admin")[];
+  mode: "local" | "server";
+  auth_required: boolean;
+}
+
 async function request<T>(method: string, path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
   let res: Response;
   try {
     res = await fetch(path, {
       method,
       signal,
+      // The session cookie (HttpOnly, SameSite=Strict) carries the token.
+      credentials: "same-origin",
       headers: body === undefined ? undefined : { "content-type": "application/json" },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
@@ -207,12 +221,17 @@ async function request<T>(method: string, path: string, body?: unknown, signal?:
     } catch {
       // not JSON
     }
+    if (res.status === 401) window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
     throw new ApiError(res.status, message, position, code);
   }
   return res.json() as Promise<T>;
 }
 
 export const api = {
+  me: (signal?: AbortSignal) => request<Me>("GET", "/api/v1/auth/me", undefined, signal),
+  /** Trades a token for the session cookie. */
+  signIn: (token: string) => request<Me>("POST", "/api/v1/auth/session", { token }),
+  signOut: () => request<Me>("DELETE", "/api/v1/auth/session"),
   meta: (signal?: AbortSignal) => request<Meta>("GET", "/api/v1/meta", undefined, signal),
   runs: (p: { q: string; sort?: string | null; desc?: boolean; archived?: boolean }, signal?: AbortSignal) => {
     const s = new URLSearchParams({ q: p.q });

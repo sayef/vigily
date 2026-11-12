@@ -20,6 +20,7 @@
 //! OpenTelemetry's `POST /v1/traces` stays at the root.
 
 pub mod admin_api;
+pub mod auth;
 pub mod config;
 pub mod evals_api;
 pub mod monitor;
@@ -37,7 +38,7 @@ use std::time::Duration;
 use axum::extract::{Path, Query as QueryParams, State};
 use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{get, post};
+use axum::routing::{get, patch, post};
 use axum::{Json, Router};
 use parking_lot::Mutex;
 use serde::Deserialize;
@@ -47,6 +48,8 @@ use vigily_api::runs::{
 };
 use vigily_api::{code, ErrorBody, ErrorDetail, Info, LegacyErrorBody, API_VERSION};
 use vigily_core::chart::{aggregate, align, x_values, Xy};
+
+use crate::auth::Scoped;
 use vigily_core::{
     Catalog, Column, Error as CoreError, MemoryRecords, Points, Query, RecordStore, RunEntry,
     RunPatch, RunStatus, StepRange, Store,
@@ -81,6 +84,10 @@ pub struct AppState {
     pub(crate) traces_count: Mutex<Option<(i64, usize)>>,
     /// Open run writers, applied ingest batches and the ingest budget.
     pub writes: writers::Writes,
+    /// Tokens and the mode they are checked in.
+    pub auth: auth::Auth,
+    /// The engine's address once it listens (`http://127.0.0.1:7600`), for scheduled commands.
+    pub url: parking_lot::RwLock<Option<String>>,
     /// Wakes the background catalog refresh early (after a write).
     pub(crate) refresh_now: tokio::sync::Notify,
     pub version: &'static str,
@@ -91,6 +98,9 @@ pub struct AppState {
 pub struct EngineOptions {
     /// Body limit and ingest budget of the write routes.
     pub limits: writers::WriteLimits,
+    /// How requests are authenticated; no checks by default (tests, embedding). [`serve`] sets
+    /// the mode from [`ServeOptions::auth`].
+    pub auth: auth::AuthMode,
 }
 
 impl AppState {
@@ -133,6 +143,8 @@ impl AppState {
             traces_cache: Mutex::new(None),
             traces_count: Mutex::new(None),
             writes: writers::Writes::new(opts.limits),
+            auth: auth::Auth::new(opts.auth),
+            url: parking_lot::RwLock::new(None),
             refresh_now: tokio::sync::Notify::new(),
             version: env!("CARGO_PKG_VERSION"),
         })
@@ -283,23 +295,31 @@ impl IntoResponse for ApiError {
 type ApiResult<T> = Result<Json<T>, ApiError>;
 
 /// The JSON API of earlier releases, relative to its root: mounted at `/api/v1`, and at `/api` as
-/// deprecated aliases.
-fn api() -> Router<Arc<AppState>> {
-    Router::new()
-        .route("/health", get(|| async { "ok" }))
-        .route("/meta", get(meta))
-        .route("/runs", get(runs))
-        .route("/runs/{id}", get(run).patch(patch_run))
-        .route("/runs/delete", post(delete_runs))
-        .route("/chart", post(chart))
+/// deprecated aliases. Grouped by the scope each route needs.
+fn api() -> Scoped {
+    Scoped::default()
+        .open(Router::new().route("/health", get(|| async { "ok" })))
+        .read(
+            Router::new()
+                .route("/meta", get(meta))
+                .route("/runs", get(runs))
+                .route("/runs/{id}", get(run))
+                .route("/chart", post(chart)),
+        )
+        .admin(
+            Router::new()
+                .route("/runs/{id}", patch(patch_run))
+                .route("/runs/delete", post(delete_runs)),
+        )
         .merge(evals_api::routes())
         .merge(traces_api::routes())
 }
 
 /// Routes added with `/api/v1`; the deprecated `/api` aliases do not serve them.
-fn v1_only(state: &Arc<AppState>) -> Router<Arc<AppState>> {
-    Router::new()
-        .route("/info", get(info))
+fn v1_only(state: &Arc<AppState>) -> Scoped {
+    Scoped::default()
+        .open(Router::new().route("/info", get(info)))
+        .merge(auth::routes())
         .merge(write_api::routes(state, state.writes.limits))
         .merge(runs_api::routes())
         .merge(evals_api::v1_routes())
@@ -321,13 +341,14 @@ pub const CAPABILITIES: &[&str] = &[
     "otlp",
     "admin",
     "ingest",
+    "auth",
 ];
 
 async fn info(State(s): State<Arc<AppState>>) -> Json<Info> {
     Json(Info {
         version: s.version.to_string(),
         api_version: API_VERSION.to_string(),
-        mode: "local".to_string(),
+        mode: s.auth.mode().name().to_string(),
         capabilities: CAPABILITIES.iter().map(|c| c.to_string()).collect(),
     })
 }
@@ -340,11 +361,19 @@ pub fn router(state: Arc<AppState>) -> Router {
             "/api/v1",
             api()
                 .merge(v1_only(&state))
+                .build()
                 .layer(axum::middleware::from_fn(v1_errors)),
         )
-        .nest("/api", api().layer(axum::middleware::from_fn(legacy)))
-        .merge(traces_api::otlp_routes())
+        .nest(
+            "/api",
+            api().build().layer(axum::middleware::from_fn(legacy)),
+        )
+        .merge(traces_api::otlp_routes().build())
         .fallback(asset)
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            auth::guard,
+        ))
         .layer(tower_http::compression::CompressionLayer::new())
         .with_state(state)
 }
@@ -415,6 +444,29 @@ pub struct ServeOptions {
     pub optimize_every: Duration,
     /// Optimize once before the first catalog refresh as well.
     pub optimize_at_start: bool,
+    /// How requests are authenticated.
+    pub auth: AuthSetup,
+}
+
+/// How [`serve`] authenticates requests.
+#[derive(Clone, Debug)]
+pub enum AuthSetup {
+    /// No checks (`--insecure-no-auth`); `server` says which mode the engine reports.
+    Off { server: bool },
+    /// The repository's local token, read from `token_file` or created there (mode 0600).
+    Local { token_file: std::path::PathBuf },
+    /// The operator's admin token (from `VIGILY_ADMIN_TOKEN`, never stored) and stored tokens.
+    Server { admin_token: String },
+}
+
+/// What [`serve`] tells its caller once it listens.
+#[derive(Clone, Debug)]
+pub struct Ready {
+    pub addr: SocketAddr,
+    /// The address to open: `http://127.0.0.1:7600` (loopback when listening on all addresses).
+    pub url: String,
+    /// In local mode, `url` with the token, which signs the browser in (`/?token=...`).
+    pub sign_in_url: Option<String>,
 }
 
 async fn optimize(state: &AppState) {
@@ -447,8 +499,23 @@ fn release_memory() {
 pub async fn serve(
     state: Arc<AppState>,
     opts: ServeOptions,
-    ready: impl FnOnce(SocketAddr),
+    ready: impl FnOnce(&Ready),
 ) -> std::io::Result<()> {
+    let mode = match &opts.auth {
+        AuthSetup::Off { server } => auth::AuthMode::Off { server: *server },
+        AuthSetup::Local { token_file } => auth::AuthMode::Local {
+            token: auth::load_or_create_token(token_file).map_err(|e| {
+                std::io::Error::new(
+                    e.kind(),
+                    format!("the local token at {}: {e}", token_file.display()),
+                )
+            })?,
+        },
+        AuthSetup::Server { admin_token } => auth::AuthMode::Server {
+            admin_token: admin_token.clone(),
+        },
+    };
+    state.auth.set_mode(mode.clone());
     if opts.optimize_at_start {
         optimize(&state).await;
     }
@@ -479,12 +546,28 @@ pub async fn serve(
             }
         }
     });
-    let mut app = router(state);
+    let mut app = router(state.clone());
     if opts.local_only {
         app = app.layer(axum::middleware::from_fn(local_only));
     }
     let listener = tokio::net::TcpListener::bind(opts.addr).await?;
-    ready(listener.local_addr()?);
+    let addr = listener.local_addr()?;
+    let shown = if addr.ip().is_unspecified() {
+        SocketAddr::new([127, 0, 0, 1].into(), addr.port())
+    } else {
+        addr
+    };
+    let url = format!("http://{shown}");
+    *state.url.write() = Some(url.clone());
+    let sign_in_url = match &mode {
+        auth::AuthMode::Local { token } => Some(format!("{url}/?token={token}")),
+        _ => None,
+    };
+    ready(&Ready {
+        addr,
+        url,
+        sign_in_url,
+    });
     axum::serve(listener, app)
         .with_graceful_shutdown(async {
             let _ = tokio::signal::ctrl_c().await;

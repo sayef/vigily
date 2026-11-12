@@ -1,0 +1,13 @@
+{
+  "token": "vgy_3f2a9c41d07b6e15_00000000000000000000000000000000",
+  "id": "3f2a9c41d07b6e15",
+  "name": "nightly-evals",
+  "scopes": [
+    "read",
+    "ingest"
+  ],
+  "created_at": 1700000000000000,
+  "last_used_at": null,
+  "expires_at": null,
+  "created_by": "admin"
+}

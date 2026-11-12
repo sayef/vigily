@@ -88,16 +88,18 @@ uv sync --no-install-project && uv run --no-sync maturin develop --release
 
 uv run --no-sync python examples/demo.py              # synthetic training runs
 uv run --no-sync python examples/eval_demo.py         # 30 synthetic nights of evaluations
-target/release/vigily up --config examples/vigily.toml   # http://127.0.0.1:7600
+target/release/vigily up --config examples/vigily.toml   # open the link it prints
 ```
 
 ### Run with Docker
 
 Each release publishes a multi-platform image (amd64 and arm64) as `ghcr.io/sayef/vigily`, tagged
 `vX.Y.Z`, `X.Y` and `latest`. `compose.yaml` runs it and serves the web app on
-<http://localhost:7600>, with the repository in a named volume:
+<http://localhost:7600>, with the repository in a named volume. The container runs in server mode
+and needs an admin token, which you also sign in with:
 
 ```bash
+export VIGILY_ADMIN_TOKEN=$(openssl rand -hex 32)
 docker compose up -d
 ```
 

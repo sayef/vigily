@@ -28,7 +28,15 @@ fn state_with(
     records: Arc<dyn RecordStore>,
     limits: WriteLimits,
 ) -> Arc<AppState> {
-    AppState::with_options(store, records, Config::default(), EngineOptions { limits })
+    AppState::with_options(
+        store,
+        records,
+        Config::default(),
+        EngineOptions {
+            limits,
+            ..Default::default()
+        },
+    )
 }
 
 fn memory() -> Arc<AppState> {

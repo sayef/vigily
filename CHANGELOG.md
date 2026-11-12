@@ -84,8 +84,20 @@ The first release, published as betas (0.1.0-beta.N) before 0.1.0.
   run's heartbeat (at most one stored every two minutes), and new data shows up without waiting
   for the next catalog refresh.
 
+- Sign-in. `vigily up` runs in local mode on a loopback address: a random token per repository,
+  kept in a private file, opens the API, and the link it prints (`/?token=...`) stores it in an
+  HttpOnly, SameSite=Strict cookie. On any other address (and in Docker) it runs in server mode and
+  refuses to start without `VIGILY_ADMIN_TOKEN` (or `VIGILY_ADMIN_TOKEN_FILE`) unless given
+  `--insecure-no-auth`. Admins create tokens with the scopes `read`, `ingest` and `admin`
+  (`/api/v1/auth/tokens`), stored as SHA-256 hashes; the web app shows a sign-in page when needed.
+  Cookie-authenticated writes must come from vigily's own origin. Scheduled commands get
+  `VIGILY_URL` and a short-lived token; labels record who entered them. The SDK's span exporter
+  sends `VIGILY_TOKEN` (or `vigily.tracing.configure(token=...)`).
+
 ### Changed
 
+- Every API route except health, info and `auth/me` needs a token, including the deprecated
+  `/api/*` aliases and OTLP's `/v1/traces`. `docker compose up` needs `VIGILY_ADMIN_TOKEN`.
 - The HTTP API moves to `/api/v1`, with `GET /api/v1/info` (version, API version, mode and
   capabilities). Errors there are `{"error": {"code", "message", "position"?}}` with a stable code
   (`not_found`, `invalid_argument`, `conflict`, ...). The old `/api/*` paths keep working as

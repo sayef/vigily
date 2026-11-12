@@ -129,6 +129,9 @@ pub struct Label {
     pub passed: Option<bool>,
     pub comment: Option<String>,
     pub created_at: i64,
+    /// Who entered it: the principal of the request (`local`, `admin`, `token:<name>`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub by: Option<String>,
 }
 
 /// A sample of one input feature seen by a run, for data drift.

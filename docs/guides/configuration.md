@@ -11,6 +11,11 @@ the server serves it. A `vigily.toml` adds schedules, an alert webhook and drift
 | `VIGILY_PORT` | `vigily up` | The port, default 7600 |
 | `VIGILY_CONFIG` | `vigily up`, `vigily schedules` | The configuration file |
 | `VIGILY_LOG` | CLI | Log filter, for example `info` or `vigily_server=debug` |
+| `VIGILY_ADMIN_TOKEN` | `vigily up --mode server` | The admin token (at least 16 characters); required in server mode, never stored |
+| `VIGILY_ADMIN_TOKEN_FILE` | `vigily up --mode server` | A file holding the admin token, instead of `VIGILY_ADMIN_TOKEN` (Docker secrets) |
+| `VIGILY_TOKEN_FILE` | `vigily up` | Where the local token is kept; default a file per repository under `$VIGILY_STATE_DIR/tokens` |
+| `VIGILY_STATE_DIR` | `vigily up` | vigily's state directory, default `~/.cache/vigily` |
+| `VIGILY_URL`, `VIGILY_TOKEN` | SDK tracing, scheduled commands | The server's address and the token sent with spans; set by the scheduler for its commands |
 | `VIGILY_SCHEDULE`, `VIGILY_SCHEDULE_RUN`, `VIGILY_SCHEDULED_FOR` | scheduled commands | Set by the scheduler; runs the command logs link back to the schedule run |
 
 In the Docker image `VIGILY_REPO` is `/data/repo` and `VIGILY_PORT` is 7600; the server reads
@@ -23,9 +28,62 @@ In the Docker image `VIGILY_REPO` is `/data/repo` and `VIGILY_PORT` is 7600; the
 | `VIGILY_DATA` | What is mounted at `/data`: the `vigily` volume, or a directory such as `./vigily-data` |
 | `VIGILY_UID`, `VIGILY_GID` | The user the server runs as, default 10001; your own ids with a directory |
 | `VIGILY_HOST_PORT` | The port published on `127.0.0.1`, default 7600 |
+| `VIGILY_ADMIN_TOKEN` | Required: the admin token; `docker compose up` refuses to start without it |
 | `VIGILY_LOG` | As above |
 
 `VIGILY_REPO` itself is left to the SDK on your machine, so one shell can serve and log.
+
+## Tokens
+
+Every API request needs a token, except `GET /api/v1/health`, `/api/v1/info` and
+`/api/v1/auth/me` and the web app's own files. `vigily up` runs in one of two modes.
+
+**Local mode** (the default on `127.0.0.1`): one user on this machine. vigily keeps a random
+128-bit token per repository in a file only you can read (`--token-file`, default under
+`~/.cache/vigily/tokens`), the same one each start, and prints a link with it:
+
+```text
+Open http://127.0.0.1:7600/?token=... (Ctrl-C to stop)
+```
+
+Opening the link once stores the token in an HttpOnly, SameSite=Strict cookie and loads the page
+without it. Scripts send it as `Authorization: Bearer <token>`; the SDK's span exporter reads it
+from `VIGILY_TOKEN`. vigily still answers only requests addressed to `localhost`, `127.0.0.1` or
+`[::1]`, against DNS rebinding. A request that uses the cookie to change something must come from
+vigily's own pages (its `Origin` must match); a bearer token needs no such check.
+
+**Server mode** (the default on any other address, or `--mode server`): a shared engine. It refuses
+to start without `VIGILY_ADMIN_TOKEN` (or `VIGILY_ADMIN_TOKEN_FILE`), which opens everything and is
+read from the environment only. `--insecure-no-auth` starts without any checks instead, for an
+engine behind your own access control. People sign in on the web app with a token
+(`POST /api/v1/auth/session`; the cookie is `Secure` behind HTTPS, also when a proxy sets
+`X-Forwarded-Proto: https`).
+
+Further tokens carry scopes, and are created by an admin:
+
+| Scope | Allows |
+|---|---|
+| `read` | Every read: runs, charts, datasets, results, schedules, drift, alerts, traces |
+| `ingest` | Writing: runs and points (`/api/v1/ingest`), results, features, dataset commits, spans (also OTLP at `/v1/traces`) |
+| `admin` | Everything, including edits in the web app (names, tags, labels, baselines, alerts), deleting runs and traces, starting schedules, storage administration and tokens |
+
+A script that logs runs and reads them back needs `read` and `ingest`.
+
+```bash
+curl -s -X POST http://vigily.example/api/v1/auth/tokens \
+  -H "Authorization: Bearer $VIGILY_ADMIN_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"name": "nightly-evals", "scopes": ["read", "ingest"]}'
+```
+
+The answer holds the token (`vgy_...`) once; vigily stores only its SHA-256, as a record
+`auth/token/<id>` in the repository, with its name, scopes, creation time, who created it, when it
+was last used and an optional `expires_at` (UTC microseconds). `GET /api/v1/auth/tokens` lists
+them and `DELETE /api/v1/auth/tokens/<id>` revokes one. Labels record who entered them (`local`,
+`admin` or `token:<name>`), and the audit export shows it.
+
+Scheduled commands get `VIGILY_URL` and, when the engine checks tokens, a `VIGILY_TOKEN` with the
+`read` and `ingest` scopes that is held in memory, expires with the attempt and is revoked when the
+command exits.
 
 ## vigily.toml
 

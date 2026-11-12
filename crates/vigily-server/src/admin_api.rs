@@ -17,13 +17,16 @@ use serde::de::DeserializeOwned;
 use vigily_api::code;
 use vigily_api::runs::{Optimized, PurgeRequest, PurgeSummary};
 
+use crate::auth::Scoped;
 use crate::{ApiError, AppState};
 
-/// The admin routes, relative to the API root.
-pub fn routes() -> Router<Arc<AppState>> {
-    Router::new()
-        .route("/admin/purge", post(purge))
-        .route("/admin/optimize", post(optimize))
+/// The admin routes, relative to the API root; they need the `admin` scope.
+pub fn routes() -> Scoped {
+    Scoped::default().admin(
+        Router::new()
+            .route("/admin/purge", post(purge))
+            .route("/admin/optimize", post(optimize)),
+    )
 }
 
 /// Reads a JSON body that may be empty (then every field takes its default).

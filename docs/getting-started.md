@@ -65,6 +65,7 @@ Each release publishes an image for amd64 and arm64 as `ghcr.io/sayef/vigily`, t
 `X.Y` and `latest`. From a checkout of this repository (for `compose.yaml`):
 
 ```bash
+export VIGILY_ADMIN_TOKEN=$(openssl rand -hex 32)     # keep it: you sign in with it
 docker compose up -d                                   # the latest release
 VIGILY_IMAGE=ghcr.io/sayef/vigily:v0.1.0-beta.1 docker compose up -d   # a given one
 ```
@@ -72,8 +73,13 @@ VIGILY_IMAGE=ghcr.io/sayef/vigily:v0.1.0-beta.1 docker compose up -d   # a given
 Or without Compose:
 
 ```bash
-docker run -d -p 127.0.0.1:7600:7600 -v vigily:/data ghcr.io/sayef/vigily:latest
+docker run -d -p 127.0.0.1:7600:7600 -e VIGILY_ADMIN_TOKEN -v vigily:/data ghcr.io/sayef/vigily:latest
 ```
+
+The container serves on all its addresses, so vigily runs in server mode and refuses to start
+without `VIGILY_ADMIN_TOKEN` (at least 16 characters; `VIGILY_ADMIN_TOKEN_FILE` names a file
+holding it instead, for Docker secrets). vigily never stores it. Compose reads it from your shell
+or from a `.env` file next to `compose.yaml`.
 
 To build the image from the checkout instead, add `compose.dev.yaml`:
 
@@ -81,13 +87,14 @@ To build the image from the checkout instead, add `compose.dev.yaml`:
 docker compose -f compose.yaml -f compose.dev.yaml up -d --build
 ```
 
-Open <http://localhost:7600>. The container runs as an unprivileged user (uid 10001) and keeps
+Open <http://localhost:7600> and sign in with the admin token. The container runs as an unprivileged user (uid 10001) and keeps
 everything under `/data`: the repository in `/data/repo`, and `/data/vigily.toml` as the
 configuration when it exists. Both live in the `vigily` volume, so they survive restarts and
 rebuilds; `docker compose down -v` deletes them.
 
-The port is published on `127.0.0.1` only. vigily has no sign-in, so put your own access control
-in front of it before publishing it further.
+The port is published on `127.0.0.1` only. Every request needs a token; for anything beyond this
+machine, create scoped tokens for people and scripts ([Tokens](guides/configuration.md#tokens)) and
+put TLS in front of vigily.
 
 The Python SDK writes to the repository directly, so a training script has to reach the same
 storage as the server. On one machine, keep the data in a directory you own instead of the volume,
@@ -126,7 +133,8 @@ uv run --no-sync python examples/eval_demo.py     # datasets, evaluations, drift
 target/release/vigily up --config examples/vigily.toml
 ```
 
-Open <http://127.0.0.1:7600>. Start on **Runs**, select a few runs with `x` and press `c` to compare
+Open the link `vigily up` prints (`http://127.0.0.1:7600/?token=...`): the token signs your
+browser in and is kept per repository, so the link stays the same. Start on **Runs**, select a few runs with `x` and press `c` to compare
 their curves; then open **Drift** to see what the nightly evaluations found.
 
 ## Log your own run

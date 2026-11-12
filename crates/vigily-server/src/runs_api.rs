@@ -17,16 +17,19 @@ use serde_json::Value;
 use vigily_api::runs::{RunParams, RunSeries, SeriesPoints};
 use vigily_core::{metric_key, RunEntry, StepRange, TimeRange};
 
+use crate::auth::Scoped;
 use crate::{ApiError, AppState};
 
 type ApiResult<T> = Result<Json<T>, ApiError>;
 
-/// The run-data routes, relative to the API root.
-pub fn routes() -> Router<Arc<AppState>> {
-    Router::new()
-        .route("/runs/{id}/params", get(params))
-        .route("/runs/{id}/series", get(series))
-        .route("/runs/{id}/points", get(points))
+/// The run-data routes, relative to the API root; they need the `read` scope.
+pub fn routes() -> Scoped {
+    Scoped::default().read(
+        Router::new()
+            .route("/runs/{id}/params", get(params))
+            .route("/runs/{id}/series", get(series))
+            .route("/runs/{id}/points", get(points)),
+    )
 }
 
 async fn entry(s: &AppState, id: &str) -> Result<Arc<RunEntry>, ApiError> {

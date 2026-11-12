@@ -28,6 +28,8 @@ toml.workspace = true
 reqwest.workspace = true
 # Streams NDJSON response bodies (already in the tree through axum and reqwest).
 futures-util = { version = "0.3", default-features = false }
+# Random local tokens and access tokens (already in the tree through kv0's dependencies).
+getrandom = "0.3"
 
 [target.'cfg(unix)'.dependencies]
 # Kill a timed-out schedule's whole process group.

@@ -37,6 +37,7 @@ use vigily_api::runs::{
 };
 use vigily_core::{evals, Error as CoreError, NewRun, Run, RunStatus, RunWriter};
 
+use crate::auth::Scoped;
 use crate::writers::WriteLimits;
 use crate::{ApiError, AppState};
 
@@ -51,12 +52,12 @@ const MAX_KEY: usize = 256;
 
 const NDJSON: &str = "application/x-ndjson";
 
-/// The write routes, relative to the API root.
-pub fn routes(state: &Arc<AppState>, limits: WriteLimits) -> Router<Arc<AppState>> {
+/// The write routes, relative to the API root; they need the `ingest` scope.
+pub fn routes(state: &Arc<AppState>, limits: WriteLimits) -> Scoped {
     let ingest = Router::new()
         .route("/ingest", post(ingest))
         .layer(axum::middleware::from_fn_with_state(state.clone(), budget));
-    Router::new()
+    let writes = Router::new()
         .route("/runs", post(create))
         .route("/runs/{id}/resume", post(resume))
         .route("/runs/{id}/finish", post(finish_route))
@@ -66,7 +67,8 @@ pub fn routes(state: &Arc<AppState>, limits: WriteLimits) -> Router<Arc<AppState
         .route("/flush", post(flush))
         .merge(ingest)
         .layer(DefaultBodyLimit::max(limits.max_body))
-        .layer(tower_http::decompression::RequestDecompressionLayer::new())
+        .layer(tower_http::decompression::RequestDecompressionLayer::new());
+    Scoped::default().ingest(writes)
 }
 
 /// Parses a JSON body.

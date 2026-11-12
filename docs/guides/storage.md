@@ -35,14 +35,17 @@ appear. kv0 compacts the small files each finished run adds, and the server opti
 
 ## Serving to a team
 
-`vigily up` has no sign-in. On `127.0.0.1` it answers only requests addressed to localhost, which
-protects against DNS rebinding. To share it:
+Run `vigily up` in server mode: it needs an admin token from the environment and accepts scoped
+tokens for people and scripts (see [Tokens](configuration.md#tokens)). To share it:
 
-1. Run it as a dedicated, unprivileged user, bound to localhost.
-2. Put a reverse proxy in front that terminates TLS and authenticates (your SSO, or at least basic
-   authentication), and forward to `127.0.0.1:7600`.
+1. Run it as a dedicated, unprivileged user with `--mode server` and `VIGILY_ADMIN_TOKEN` (or
+   `VIGILY_ADMIN_TOKEN_FILE`) set, bound to localhost.
+2. Put a reverse proxy in front that terminates TLS and sets `X-Forwarded-Proto: https`, and
+   forward to `127.0.0.1:7600`.
 3. If the proxy runs elsewhere, use `--host 0.0.0.0` and restrict the port to the proxy with a
    firewall rule.
+4. Create a token per person or script with the scopes it needs, and revoke it when it is no
+   longer used.
 
 A systemd unit is enough:
 
@@ -54,7 +57,9 @@ After=network-online.target
 [Service]
 User=vigily
 WorkingDirectory=/srv/vigily
-ExecStart=/usr/local/bin/vigily up --repo /srv/vigily/repo --config /srv/vigily/vigily.toml
+# A file only the vigily user can read, holding a long random value.
+Environment=VIGILY_ADMIN_TOKEN_FILE=/srv/vigily/admin-token
+ExecStart=/usr/local/bin/vigily up --mode server --repo /srv/vigily/repo --config /srv/vigily/vigily.toml
 KillMode=control-group
 Restart=on-failure
 
