@@ -6588,6 +6588,8 @@ dependencies = [
  "anyhow",
  "async-trait",
  "clap",
+ "flate2",
+ "serde",
  "serde_json",
  "tempfile",
  "tokio",

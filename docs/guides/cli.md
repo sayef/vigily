@@ -6,6 +6,7 @@ vigily status             whether an engine serves the repository, and where
 vigily stop               stop the repository's local engine
 vigily open               print the sign-in link and open it in a browser
 vigily env                print VIGILY_URL and VIGILY_TOKEN as shell exports
+vigily sync               send what the Python SDK left in its offline spool
 vigily runs               list runs in a terminal, newest first
 vigily runs purge         erase deleted runs (and deleted traces) from storage
 vigily traces delete      delete traces by id; --erase also erases them
@@ -141,6 +142,26 @@ local token) and opens it when a desktop is available (`--no-browser` only print
 ```bash
 eval "$(vigily env)"
 ```
+
+## vigily sync
+
+When the Python SDK cannot reach its engine, it keeps batches in a spool in the
+[state directory](#the-state-directory) (`spool/<writer>/`, gzip-compressed NDJSON readable by you
+only) and sends them itself once the engine answers again. `vigily sync` sends what processes left
+there when they exited, to the engine they were meant for: the repository's local engine (started
+when needed), or the engine at `--url`:
+
+```bash
+vigily sync                                   # spooled for ./.vigily's engine
+vigily --url https://vigily.example.com sync  # spooled for a team server (with VIGILY_TOKEN)
+vigily sync --dry-run                         # list what would be sent
+```
+
+Files are sent in the order they were written and removed once the engine has taken them; every
+batch keeps its writer and sequence number, so a batch the process had already sent is stored once.
+Operations for runs deleted meanwhile are left out with a message. Spool directories of processes
+that still run are skipped (they send their own), and those meant for other engines are listed. It
+exits 1 when the engine cannot be reached or refuses a batch; the rest stays in the spool.
 
 ## vigily tokens, vigily token rotate
 
