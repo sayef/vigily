@@ -24,8 +24,11 @@ sh install.sh
 
 | Variable | Meaning |
 |---|---|
-| `VIGILY_VERSION` | The release to install, such as `v0.1.0`; default the latest |
+| `VIGILY_VERSION` | The release to install, such as `v0.1.0-beta.1`; default the latest |
 | `VIGILY_INSTALL_DIR` | Where to put the binary; default `~/.local/bin` |
+
+Until 0.1.0 every release is a beta, published as a pre-release, and `latest` serves none of
+them: set `VIGILY_VERSION` (or `VIGILY_IMAGE` for Docker) to a beta tag such as `v0.1.0-beta.1`.
 
 On other systems (musl-based Linux such as Alpine, FreeBSD, Windows), build from source.
 
@@ -63,7 +66,7 @@ Each release publishes an image for amd64 and arm64 as `ghcr.io/sayef/vigily`, t
 
 ```bash
 docker compose up -d                                   # the latest release
-VIGILY_IMAGE=ghcr.io/sayef/vigily:v0.2.0 docker compose up -d   # a given one
+VIGILY_IMAGE=ghcr.io/sayef/vigily:v0.1.0-beta.1 docker compose up -d   # a given one
 ```
 
 Or without Compose:

@@ -1,6 +1,6 @@
 # vigily as a server: `docker compose up -d`, then open http://localhost:7600. This runs the
 # published image (ghcr.io/sayef/vigily); VIGILY_IMAGE picks another tag, such as
-# ghcr.io/sayef/vigily:v0.2.0, or vigily:local from scripts/docker-local.sh.
+# ghcr.io/sayef/vigily:v0.1.0-beta.1, or vigily:local from scripts/docker-local.sh.
 #
 # To build the image from this checkout instead, add compose.dev.yaml:
 #   docker compose -f compose.yaml -f compose.dev.yaml up -d --build
