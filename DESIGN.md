@@ -163,7 +163,7 @@ uPlot's aligned-data model (one shared x array, `null` for gaps) shapes the serv
 
 ### Downsampling: a min/max envelope on a shared grid
 
-`POST /api/chart` reads a metric for many runs and returns them on one x array, at about two values
+`POST /api/v1/chart` reads a metric for many runs and returns them on one x array, at about two values
 per pixel column:
 
 - **Exact** when the distinct x values of every run in the visible range fit the budget: their union,
@@ -331,7 +331,7 @@ app and, when `alerts.webhook` is set, are posted there as JSON.
 
 Every eval result traces back to its dataset version and digest, item hash, target reference,
 evaluator name and version, schedule and schedule run, and times in UTC. The run page shows this and
-exports it as one JSON document (`GET /api/runs/{id}/audit`). This supports record keeping for
+exports it as one JSON document (`GET /api/v1/runs/{id}/audit`). This supports record keeping for
 monitoring deployed models (for example post-market monitoring under the EU AI Act); vigily makes no
 claim that using it satisfies any legal requirement.
 
@@ -349,7 +349,7 @@ payload policy.
 
 ### Ingest through the server
 
-Unlike metrics, spans are sent to `vigily up` (`POST /api/traces/ingest`, or OTLP/HTTP JSON at
+Unlike metrics, spans are sent to `vigily up` (`POST /api/v1/traces/ingest`, or OTLP/HTTP JSON at
 `POST /v1/traces`) rather than written to storage by the SDK:
 
 - the payload policy protects personal data, so it must be the operator's (`vigily.toml`), applied

@@ -1,7 +1,7 @@
 # The audit trail
 
 Every eval result in vigily can be traced to what produced it. An eval run's page shows the trail
-on its **Audit** tab; **Export the audit record (JSON)** there, or `GET /api/runs/{id}/audit`,
+on its **Audit** tab; **Export the audit record (JSON)** there, or `GET /api/v1/runs/{id}/audit`,
 returns it as one JSON document.
 
 ## What is recorded

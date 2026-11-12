@@ -69,7 +69,7 @@ an opt-in helper: vigily never patches or wraps a client library.
 ### Export
 
 Finished spans go into a queue; a background thread sends them in batches (256 spans, or after one
-second) to `POST /api/traces/ingest`, so tracing never waits on the network. Queued spans are sent
+second) to `POST /api/v1/traces/ingest`, so tracing never waits on the network. Queued spans are sent
 when the interpreter exits normally; call `vigily.tracing.flush()` before `os._exit` or when a
 short-lived worker must not lose its last spans. If the server cannot be reached, the batch is
 retried twice and then dropped with one warning on stderr: tracing never fails your program.
@@ -208,7 +208,7 @@ it as a second line after choosing what to trace and which payload mode to use.
   [deleting is not erasing](storage.md#deleting-is-not-erasing-purge) for what a purge does not
   reach (backups, object-store versioning, disk blocks).
 - A trace not linked to a run is deleted with `vigily traces delete <id>...` or
-  `DELETE /api/traces/<id>`, which hides it. `vigily runs purge` (or `vigily traces delete <id>
+  `DELETE /api/v1/traces/<id>`, which hides it. `vigily runs purge` (or `vigily traces delete <id>
   --erase`) then erases it: it compacts storage, which drops the deleted rows, and removes the
   older versions that still hold them. Erasing is a command-line step on purpose, as for runs.
 - Both commands run a **full optimize** of the repository before purging. On a large repository
