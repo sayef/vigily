@@ -52,6 +52,9 @@ pub mod code {
     pub const OVERLOADED: &str = "overloaded";
     /// Something failed inside the engine (storage, for example).
     pub const INTERNAL: &str = "internal";
+    /// `POST admin/purge` (and an erasing `POST traces/delete`) without `force`: a storage tag
+    /// keeps an older version that still holds deleted data, so nothing was purged.
+    pub const TAG_BLOCKS_PURGE: &str = "tag_blocks_purge";
 }
 
 /// Every failed `/api/v1` request: `{"error": {"code", "message", "position"?}}`.

@@ -1,0 +1,10 @@
+{
+  "project": "support",
+  "payloads": "metadata",
+  "max_field_bytes": 4096,
+  "unknown_project": {
+    "payloads": "metadata",
+    "max_field_bytes": 4096
+  },
+  "currency": "EUR"
+}

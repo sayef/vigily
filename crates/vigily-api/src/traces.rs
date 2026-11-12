@@ -404,3 +404,47 @@ pub struct TraceResponse {
 pub struct TraceDeleted {
     pub deleted: bool,
 }
+
+/// `POST traces/delete`.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct DeleteTraces {
+    pub ids: Vec<String>,
+    /// Purge storage afterwards, so the deleted spans are erased from the files too.
+    #[serde(default)]
+    pub erase: bool,
+    /// With `erase`: also delete storage tags that keep erased data.
+    #[serde(default)]
+    pub force: bool,
+}
+
+/// What `POST traces/delete` did.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct TracesDeleted {
+    pub deleted: usize,
+    /// Ids with no trace.
+    pub missing: Vec<String>,
+    /// The purge, with `erase`.
+    pub purge: Option<crate::runs::PurgeSummary>,
+}
+
+/// A payload policy: what is stored of span payloads, and the longest stored field.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Policy {
+    pub payloads: PayloadMode,
+    pub max_field_bytes: usize,
+}
+
+/// `GET tracing/policy?project=`: the payload policy a client applies before sending spans, so
+/// payloads the engine would drop never leave the process.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct TracingPolicy {
+    /// The project asked for; null for the global policy.
+    pub project: Option<String>,
+    /// The policy for that project (the global one without a project).
+    #[serde(flatten)]
+    pub policy: Policy,
+    /// The policy while a trace's project is not known yet: the strictest configured.
+    pub unknown_project: Policy,
+    /// The currency of costs.
+    pub currency: String,
+}

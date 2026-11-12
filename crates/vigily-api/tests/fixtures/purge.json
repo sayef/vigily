@@ -1,0 +1,10 @@
+{
+  "runs": 2,
+  "fragments_rewritten": 3,
+  "versions_removed": 14,
+  "bytes_removed": 1048576,
+  "tags_deleted": [
+    "before-cleanup"
+  ],
+  "legacy_records_present": false
+}

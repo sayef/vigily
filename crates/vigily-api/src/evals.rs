@@ -603,3 +603,13 @@ pub struct DataDriftResponse {
 pub struct AlertChange {
     pub acknowledged: bool,
 }
+
+/// `POST schedules/{name}/run`: the run started; poll `GET schedules/{name}/runs/{id}` until its
+/// status is no longer `running`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ScheduleRunStarted {
+    pub schedule: String,
+    /// The first attempt's id.
+    pub id: String,
+    pub status: ScheduleRunStatus,
+}

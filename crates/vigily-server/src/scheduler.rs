@@ -228,9 +228,52 @@ fn spawn_execute(state: Arc<AppState>, cfg: ScheduleConfig, at: i64, running: Ar
 /// Runs a schedule's command for the fire time `at`, with retries; raises an alert when every
 /// attempt fails. Returns the attempts.
 pub async fn execute(state: &AppState, cfg: &ScheduleConfig, at: i64) -> Vec<ScheduleRun> {
+    execute_from(state, cfg, at, None).await
+}
+
+/// The record of a first attempt that starts now, before its command is spawned.
+fn running_record(cfg: &ScheduleConfig, at: i64, attempt: u32) -> ScheduleRun {
+    let started = now_micros();
+    ScheduleRun {
+        id: attempt_id(&cfg.name, started, attempt),
+        schedule: cfg.name.clone(),
+        scheduled_for: at,
+        started_at: started,
+        ended_at: None,
+        attempt,
+        status: ScheduleRunStatus::Running,
+        exit_code: None,
+        command: cfg.command.clone(),
+        stdout: String::new(),
+        stderr: String::new(),
+        reason: None,
+    }
+}
+
+/// Starts a schedule's command now, as the operator, in the background (with its retries, like a
+/// scheduled run). Returns the first attempt, already recorded as running, so a client can follow
+/// it by id.
+pub async fn start_now(state: Arc<AppState>, cfg: ScheduleConfig) -> ScheduleRun {
+    let at = now_micros();
+    let first = running_record(&cfg, at, 1);
+    let _ = evals::put_schedule_run(&*state.records, &first).await;
+    let r = first.clone();
+    tokio::spawn(async move {
+        execute_from(&state, &cfg, at, Some(r)).await;
+    });
+    first
+}
+
+/// [`execute`], with the first attempt's record made (and stored) already.
+async fn execute_from(
+    state: &AppState,
+    cfg: &ScheduleConfig,
+    at: i64,
+    mut first: Option<ScheduleRun>,
+) -> Vec<ScheduleRun> {
     let mut attempts = Vec::new();
     for attempt in 1..=cfg.retries + 1 {
-        let r = run_once(state, cfg, at, attempt).await;
+        let r = run_once(state, cfg, at, attempt, first.take()).await;
         let ok = r.status == ScheduleRunStatus::Succeeded;
         attempts.push(r);
         if ok {
@@ -437,23 +480,21 @@ fn attempt_id(schedule: &str, started: i64, attempt: u32) -> String {
     format!("{started:020}-{attempt}-{:08x}", h as u32)
 }
 
-async fn run_once(state: &AppState, cfg: &ScheduleConfig, at: i64, attempt: u32) -> ScheduleRun {
-    let started = now_micros();
-    let mut rec = ScheduleRun {
-        id: attempt_id(&cfg.name, started, attempt),
-        schedule: cfg.name.clone(),
-        scheduled_for: at,
-        started_at: started,
-        ended_at: None,
-        attempt,
-        status: ScheduleRunStatus::Running,
-        exit_code: None,
-        command: cfg.command.clone(),
-        stdout: String::new(),
-        stderr: String::new(),
-        reason: None,
+async fn run_once(
+    state: &AppState,
+    cfg: &ScheduleConfig,
+    at: i64,
+    attempt: u32,
+    recorded: Option<ScheduleRun>,
+) -> ScheduleRun {
+    let mut rec = match recorded {
+        Some(r) => r,
+        None => {
+            let r = running_record(cfg, at, attempt);
+            let _ = evals::put_schedule_run(&*state.records, &r).await;
+            r
+        }
     };
-    let _ = evals::put_schedule_run(&*state.records, &rec).await;
     let scheduled_for = Utc
         .timestamp_micros(at)
         .single()

@@ -6704,10 +6704,12 @@ dependencies = [
 name = "vigily-server"
 version = "0.1.0-beta.1"
 dependencies = [
+ "async-trait",
  "axum",
  "chrono",
  "chrono-tz",
  "croner",
+ "futures-util",
  "http-body-util",
  "libc",
  "parking_lot",

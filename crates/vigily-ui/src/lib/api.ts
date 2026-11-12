@@ -118,7 +118,10 @@ export interface Meta {
 }
 
 export interface RunsResponse {
+  /** Every run in the repository. */
   total: number;
+  /** The runs matching the filter. */
+  matched: number;
   rows: RunRow[];
   refreshed_at: number;
 }

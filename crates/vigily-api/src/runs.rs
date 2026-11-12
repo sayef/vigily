@@ -21,11 +21,15 @@ pub struct PurgeSummary {
     pub bytes_removed: u64,
     /// Tags deleted because they kept erased data (only with `force`).
     pub tags_deleted: Vec<String>,
+    /// The records table of an earlier version (`records.lance`) is still there, already migrated.
+    /// A purge does not reach it: it holds every record as of the upgrade until deleted by hand.
+    #[serde(default)]
+    pub legacy_records_present: bool,
 }
 
-/// A run as a row of the runs table.
+/// A run without its parameters and metric statistics (`GET runs?fields=summary`).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct RunRow {
+pub struct RunSummary {
     pub id: String,
     /// The name, or the start of the id when the run has none.
     pub name: String,
@@ -48,7 +52,16 @@ pub struct RunRow {
     pub stale: bool,
     /// Seconds, up to now for running runs.
     pub duration: f64,
+}
+
+/// A run as a row of the runs table.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct RunRow {
+    #[serde(flatten)]
+    pub run: RunSummary,
+    /// Flattened parameters (`hparams.lr`).
     pub params: BTreeMap<String, Value>,
+    /// Statistics by metric key (`loss[val]`).
     pub metrics: BTreeMap<String, MetricStat>,
 }
 
@@ -98,13 +111,114 @@ pub struct Meta {
     pub params: Vec<ParamInfo>,
 }
 
-/// `GET runs`: the runs matching a filter, sorted.
+/// `GET runs`: the runs matching a filter, sorted, a page of them. Rows are [`RunRow`]s, or
+/// [`RunSummary`]s with `fields=summary`.
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct RunsResponse {
+pub struct RunsResponse<R = RunRow> {
     /// Every run in the repository (not only the matching ones).
     pub total: usize,
-    pub rows: Vec<RunRow>,
+    /// The runs matching the filter, before `offset` and `limit`.
+    pub matched: usize,
+    pub rows: Vec<R>,
     pub refreshed_at: i64,
+}
+
+/// Which fields `GET runs` answers with.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RunFields {
+    /// Rows with flattened parameters and metric statistics.
+    #[default]
+    Full,
+    /// Rows without them: smaller, for lists and the command line.
+    Summary,
+}
+
+/// `GET runs/{id}/params`: a run's parameters as a nested object.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct RunParams {
+    pub run_id: String,
+    pub params: Value,
+}
+
+/// `GET runs/{id}/series`: a run's metric series with their statistics.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RunSeries {
+    pub run_id: String,
+    pub series: Vec<SeriesEntry>,
+}
+
+/// `GET runs/{id}/points?name=&context=&start_time=&stop_time=`: the points of one series, in
+/// step order. A value that is not finite is the string `NaN`, `Infinity` or `-Infinity`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SeriesPoints {
+    pub run_id: String,
+    pub name: String,
+    pub context: Value,
+    /// The metric key: `loss` or `loss[val]`.
+    pub key: String,
+    pub steps: Vec<i64>,
+    #[serde(with = "non_finite")]
+    pub values: Vec<f64>,
+    pub epochs: Vec<Option<i64>>,
+    /// UTC microseconds.
+    pub timestamps: Vec<i64>,
+}
+
+/// Numbers as JSON numbers, and NaN and the infinities (which JSON lacks) as strings.
+pub mod non_finite {
+    use serde::de::Error;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    use serde_json::Value;
+
+    fn to_value(v: f64) -> Value {
+        if v.is_finite() {
+            serde_json::json!(v)
+        } else if v.is_nan() {
+            Value::from("NaN")
+        } else if v > 0.0 {
+            Value::from("Infinity")
+        } else {
+            Value::from("-Infinity")
+        }
+    }
+
+    pub fn serialize<S: Serializer>(v: &[f64], s: S) -> Result<S::Ok, S::Error> {
+        v.iter()
+            .map(|x| to_value(*x))
+            .collect::<Vec<_>>()
+            .serialize(s)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<f64>, D::Error> {
+        Vec::<Value>::deserialize(d)?
+            .into_iter()
+            .map(|v| match &v {
+                Value::Number(n) => n.as_f64().ok_or_else(|| D::Error::custom("not a number")),
+                Value::String(s) => match s.as_str() {
+                    "NaN" => Ok(f64::NAN),
+                    "Infinity" => Ok(f64::INFINITY),
+                    "-Infinity" => Ok(f64::NEG_INFINITY),
+                    other => Err(D::Error::custom(format!("not a number: {other:?}"))),
+                },
+                other => Err(D::Error::custom(format!("not a number: {other}"))),
+            })
+            .collect()
+    }
+}
+
+/// `POST admin/purge`.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct PurgeRequest {
+    /// Also delete storage tags that keep erased data.
+    #[serde(default)]
+    pub force: bool,
+}
+
+/// `POST admin/optimize`: storage was compacted.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Optimized {
+    pub seconds: f64,
 }
 
 /// `GET runs/{id}`: one run with its parameter tree and series.

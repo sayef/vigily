@@ -64,6 +64,15 @@ The first release, published as betas (0.1.0-beta.N) before 0.1.0.
 - Web app: Datasets, Drift, Schedules and Alerts pages; Items and Audit tabs on eval runs; Compare.
 - `examples/eval_demo.py`: 30 synthetic nights of two targets with injected drift.
 
+- `/api/v1` routes for clients other than the web app: the runs list pages with `limit` and
+  `offset`, answers `matched` and takes `fields=summary`; a run's parameters, series and the points
+  of one series (with a time window; NaN and infinities as strings); dataset versions and a
+  version's items as NDJSON; an eval run's results; `POST admin/purge` (with
+  `legacy_records_present`, and a 409 `tag_blocks_purge` when a storage tag keeps deleted data) and
+  `POST admin/optimize`; `POST traces/delete` for several traces, optionally erasing them; `POST
+  schedules/{name}/run`, which answers 202 with the run's id at once; and `GET tracing/policy`.
+  Admin routes accept only JSON from the server's own origin, like span ingest.
+
 ### Changed
 
 - The HTTP API moves to `/api/v1`, with `GET /api/v1/info` (version, API version, mode and
