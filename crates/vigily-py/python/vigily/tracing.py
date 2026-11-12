@@ -22,9 +22,11 @@ the traced code on the network. Queued spans are sent when the interpreter exits
 :func:`flush` to send them earlier (for example before ``os._exit``).
 
 The server is ``http://127.0.0.1:7600`` unless :func:`configure` or ``VIGILY_URL`` names another;
-``VIGILY_TRACING=off`` turns tracing off. The server decides what is stored of inputs and outputs
-(full, truncated to 4 KiB per field by default, or metadata only) and computes cost from its price
-table; :func:`set_redactor` changes or drops spans before they leave the process.
+spans are sent with the token from :func:`configure` or ``VIGILY_TOKEN`` (the server's local
+token, or an access token with the ``ingest`` scope). ``VIGILY_TRACING=off`` turns tracing off.
+The server decides what is stored of inputs and outputs (full, truncated to 4 KiB per field by
+default, or metadata only) and computes cost from its price table; :func:`set_redactor` changes or
+drops spans before they leave the process.
 """
 
 from __future__ import annotations
@@ -106,12 +108,16 @@ class _Exporter:
     def __init__(
         self,
         url: str,
+        token: str | None,
         batch_size: int,
         flush_interval: float,
         timeout: float,
         max_queue: int,
     ) -> None:
         self.url = url.rstrip("/") + "/api/v1/traces/ingest"
+        self.headers = {"content-type": "application/json"}
+        if token:
+            self.headers["authorization"] = f"Bearer {token}"
         self.batch_size = batch_size
         self.flush_interval = flush_interval
         self.timeout = timeout
@@ -146,9 +152,7 @@ class _Exporter:
 
     def _send(self, batch: list[dict[str, Any]]) -> None:
         body = json.dumps({"spans": batch}, default=str).encode()
-        req = urllib.request.Request(
-            self.url, data=body, method="POST", headers={"content-type": "application/json"}
-        )
+        req = urllib.request.Request(self.url, data=body, method="POST", headers=self.headers)
         for attempt in range(3):
             try:
                 with urllib.request.urlopen(req, timeout=self.timeout) as r:
@@ -160,7 +164,8 @@ class _Exporter:
                     # A client error does not go away on retry. The response body is not shown:
                     # it could echo span content.
                     self.failed += len(batch)
-                    self._warn(f"the server refused {len(batch)} spans (HTTP {e.code} {e.reason})")
+                    hint = " (set VIGILY_TOKEN to the server's token)" if e.code in (401, 403) else ""
+                    self._warn(f"the server refused {len(batch)} spans (HTTP {e.code} {e.reason}){hint}")
                     return
             except (OSError, ValueError):
                 pass
@@ -196,6 +201,7 @@ _lock = threading.Lock()
 _exporter: _Exporter | None = None
 _settings: dict[str, Any] = {
     "url": None,
+    "token": None,
     "enabled": None,
     "batch_size": 256,
     "flush_interval": 1.0,
@@ -217,6 +223,7 @@ def _get_exporter() -> _Exporter:
         if _exporter is None:
             _exporter = _Exporter(
                 _settings["url"] or os.environ.get("VIGILY_URL") or DEFAULT_URL,
+                _settings["token"] or os.environ.get("VIGILY_TOKEN") or None,
                 _settings["batch_size"],
                 _settings["flush_interval"],
                 _settings["timeout"],
@@ -228,6 +235,7 @@ def _get_exporter() -> _Exporter:
 def configure(
     url: str | None = None,
     *,
+    token: str | None = None,
     enabled: bool | None = None,
     batch_size: int | None = None,
     flush_interval: float | None = None,
@@ -236,7 +244,8 @@ def configure(
 ) -> None:
     """Sets where and how spans are sent. Spans already queued are sent to the old server first.
 
-    ``url`` is the server (``VIGILY_URL``, else ``http://127.0.0.1:7600``); ``enabled=False``
+    ``url`` is the server (``VIGILY_URL``, else ``http://127.0.0.1:7600``); ``token`` the token
+    spans are sent with (``VIGILY_TOKEN``; ``vigily up`` prints the local one); ``enabled=False``
     turns tracing off (``trace`` blocks then cost a few microseconds and send nothing);
     ``batch_size`` and ``flush_interval`` (seconds) bound how long a span waits in the queue;
     ``max_queue`` spans at most are queued, newer ones are dropped with a warning.
@@ -246,6 +255,7 @@ def configure(
     with _lock:
         for k, v in {
             "url": url,
+            "token": token,
             "enabled": enabled,
             "batch_size": batch_size,
             "flush_interval": flush_interval,
