@@ -23,13 +23,48 @@ Every command takes `--repo` (`-r`): a directory or an object-store URI such as
 | `--optimize-at-start` | off | Also optimize before serving: indexed charts from the first request, about 3 s slower start-up and more memory at once |
 | `--no-optimize` | off | Never optimize in the background |
 | `--mode` | `local` on a loopback address, else `server` | `local`: the repository's token; `server`: needs `VIGILY_ADMIN_TOKEN` and accepts scoped tokens |
-| `--token-file` | per repository under `~/.cache/vigily/tokens` | Where local mode keeps its token; also `VIGILY_TOKEN_FILE` |
+| `--token-file` | `engines/<key>.token` in the state directory | Where local mode keeps its token; also `VIGILY_TOKEN_FILE` |
 | `--insecure-no-auth` | off | Check no tokens at all, for an engine behind your own access control |
 
 In local mode `vigily up` prints a link with the repository's token; opening it signs the browser
 in. On localhost the server also checks the `Host` header against DNS rebinding. See
 [Tokens](configuration.md#tokens) for both modes and scoped tokens. `VIGILY_LOG` sets the log
 filter, for example `VIGILY_LOG=vigily_server=debug`.
+
+One engine serves a repository on a machine: a second `vigily up` on the same repository exits
+with code 3 and names the address the first one serves. Ctrl-C and SIGTERM (`kill`,
+`docker stop`) let open requests finish and write out everything held in memory before exiting.
+
+## vigily-engine
+
+`vigily up` runs the engine in the foreground; the same server is also its own binary,
+`vigily-engine`, with the flags of `vigily up` plus:
+
+| Option | Default | |
+|---|---|---|
+| `--repo`, `-r` | `VIGILY_REPO`, then `./.vigily` | The repository |
+| `--state-dir` | `VIGILY_STATE_DIR`, else `~/Library/Caches/vigily` on macOS and `~/.cache/vigily` elsewhere | Where engines note their address and keep their token and log |
+| `--detach` | off | Start in the background, print the address once it answers, and return |
+| `--idle-timeout` | `30m` with `--detach`, else never | Stop after this long without requests, runs that showed a sign of life in the last 10 minutes, or enabled schedules; `0s` never stops |
+| `--check-config FILE` | | Check a configuration file and exit: 0 when valid, 1 with the problem |
+
+A background engine takes any free port when its own is taken. Exit codes: 0 after a clean stop, 1
+on an error, 2 for bad flags, 3 when another engine already serves the repository.
+
+### The state directory
+
+```text
+engines/<key>.json    address, process id, version, mode and token of the running engine (0600)
+engines/<key>.lock    held by the engine while it runs
+engines/<key>.token   the repository's local token, the same each start (0600)
+engines/<key>.log     output of an engine started with --detach
+```
+
+`<key>` is the first 16 hex digits of the SHA-256 of the repository's location (an absolute path
+with symbolic links resolved, or the URI). The directory is created private (0700). The JSON file
+is written once the engine listens and removed when it stops; a file whose lock nobody holds is
+left over from a crash and ignored. A token kept by an earlier release under `tokens/` is moved
+here on the first start.
 
 ## vigily runs
 

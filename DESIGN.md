@@ -26,7 +26,7 @@ service; importing other trackers' repositories.
 |---|---|---|
 | `vigily-api` | serde | The JSON of the HTTP API (requests, answers, the run model), shared by the engine and its clients; golden files pin the wire format |
 | `vigily-core` | api, kv0 (optional) | The model, queries and chart maths are testable without HTTP or Python |
-| `vigily-server` | api, core, ui, axum | The HTTP surface; tests drive it in memory with `tower::oneshot` |
+| `vigily-server` | api, core, ui, axum | The HTTP surface and the `vigily-engine` binary; tests drive it in memory with `tower::oneshot` |
 | `vigily-ui` | nothing at runtime | `build.rs` embeds `dist`, so the binary carries the app |
 | `vigily-cli` | server | The `vigily` binary |
 | `vigily-py` | core, pyo3 | An abi3 extension (one wheel per platform for Python 3.11+) |
@@ -425,6 +425,16 @@ prints, so a single user never types anything; on a shared server an admin token
 environment and hashed tokens with three scopes (`read`, `ingest`, `admin`). Routes are grouped by
 scope and each request carries an `AuthContext`, so accounts can come later without touching the
 handlers.
+
+One engine serves a repository on a machine, and the lock file is what makes that true: a second
+engine fails to take `engines/<key>.lock` and exits with code 3. I chose an OS file lock over a PID
+check because the kernel releases it when the process dies, however it dies, so a JSON file left
+over from a crash is recognisable (nobody holds its lock) without guessing from PIDs that may have
+been reused. The key is a hash of the canonical repository location, so `./runs`, `runs/` and an
+absolute path find the same engine. The local token lives next to it and survives restarts, so a
+link or a script keeps working. Engines a client starts in the background stop after 30 idle
+minutes; `vigily up` never does. SIGTERM is handled like Ctrl-C, so `docker stop` and service
+managers get a clean shutdown with storage flushed.
 
 ## Python SDK
 

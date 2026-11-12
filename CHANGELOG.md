@@ -93,8 +93,21 @@ The first release, published as betas (0.1.0-beta.N) before 0.1.0.
   Cookie-authenticated writes must come from vigily's own origin. Scheduled commands get
   `VIGILY_URL` and a short-lived token; labels record who entered them. The SDK's span exporter
   sends `VIGILY_TOKEN` (or `vigily.tracing.configure(token=...)`).
+- `vigily-engine`, the server as its own binary (`vigily up` runs it in the foreground), with
+  `--state-dir`, `--detach`, `--idle-timeout` and `--check-config`. One engine serves a
+  repository on a machine: it holds `engines/<key>.lock` in the state directory and writes its
+  address, version and local token to `engines/<key>.json` (0600) while it runs; a second engine
+  on the same repository exits with code 3 and names the first one's address. An engine started
+  with `--detach` logs to `engines/<key>.log`, takes a free port when its own is taken and stops
+  after 30 idle minutes.
 
 ### Changed
+
+- The local token moves to `engines/<key>.token` in the state directory, which defaults to
+  `~/Library/Caches/vigily` on macOS (`~/.cache/vigily` elsewhere); a token kept by an earlier
+  build under `tokens/` is moved there on the first start.
+- The server stops cleanly on SIGTERM as well as Ctrl-C (`docker stop`, service managers): open
+  requests get 10 seconds, then open runs, storage and records are flushed.
 
 - Every API route except health, info and `auth/me` needs a token, including the deprecated
   `/api/*` aliases and OTLP's `/v1/traces`. `docker compose up` needs `VIGILY_ADMIN_TOKEN`.
@@ -114,6 +127,9 @@ The first release, published as betas (0.1.0-beta.N) before 0.1.0.
   banners, social card and screenshots are regenerated.
 
 ### Fixed
+
+- The SDK recorded the branch name as `__system__.git.commit`; it now records the commit hash
+  (and the branch as `git.branch`).
 
 - Dark mode in the docs site: the code-block copy button and the breadcrumb separator had too
   little contrast, and some Material colours did not follow the brand tokens.
