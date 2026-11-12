@@ -3,9 +3,11 @@
 A tour of the code. The reasons behind the choices are in [DESIGN.md](https://github.com/sayef/vigily/blob/main/DESIGN.md).
 
 ```text
-training script ── vigily (Python) ── vigily-py (pyo3) ─┐
-                                                            ├── vigily-core ── kv0 ── Lance datasets
-browser ── vigily-ui (embedded) ── vigily-server (axum) ─┘
+training script ── vigily (Python) ── vigily-py (pyo3) ──────────────┐
+                                                                        ├── vigily-core ── kv0 ── Lance datasets
+browser ── vigily-ui (embedded) ──┐                                    │
+                                   ├── HTTP ── vigily-server (engine) ──┘
+vigily (command line, vigily-cli) ─┘
 ```
 
 ## vigily-api
@@ -158,6 +160,17 @@ server's own, so a web page cannot trigger them. Routes added with `/api/v1` hav
 Raw points of finished series are kept in a bounded cache (8 million points), so zooming re-samples
 without reading storage. Anything that is not `/api/...` or `/v1/traces` is the embedded web app; client-side routes
 get `index.html`.
+
+## vigily-cli
+
+The `vigily` binary, a client of the engine. `src/lib.rs` holds the command line (clap) and one
+function per command taking a `vigily_api::client::Client` and the streams to write to; `connect`
+resolves the engine (`vigily_api::local::resolve`) and `up` executes `vigily-engine` in the
+foreground (on Unix it replaces the process, so signals and the exit code are the engine's).
+`src/render.rs` formats tables, durations, byte counts and UTC times. Its normal dependencies are
+`vigily-api` (with `client`), clap, tokio, anyhow and serde_json; CI fails when `vigily-core`,
+`vigily-server` or kv0 appear in `cargo tree -p vigily-cli -e normal`. `tests/cli.rs` runs the
+commands, and the binary, against engines in the test process.
 
 ## vigily-ui
 

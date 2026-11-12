@@ -27,8 +27,9 @@ ARG FEATURES=s3,gcs,azure
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/src/target \
-    cargo build --release --frozen -p vigily-cli --features "${FEATURES}" \
-    && cp target/release/vigily /usr/local/bin/vigily
+    cargo build --release --frozen -p vigily-server --features "${FEATURES}" \
+    && cargo build --release --frozen -p vigily-cli \
+    && cp target/release/vigily target/release/vigily-engine /usr/local/bin/
 
 FROM debian:bookworm-slim AS runtime
 # Unpinned for the same reason as above: security updates arrive with each rebuild.
@@ -55,7 +56,7 @@ CMD ["up", "--host", "0.0.0.0"]
 # A binary built outside Docker for each platform: scripts/docker-local.sh.
 FROM runtime AS local
 ARG TARGETARCH
-COPY --chmod=755 dist/linux/${TARGETARCH}/vigily /usr/local/bin/vigily
+COPY --chmod=755 dist/linux/${TARGETARCH}/vigily dist/linux/${TARGETARCH}/vigily-engine /usr/local/bin/
 
 FROM runtime AS release
-COPY --from=build /usr/local/bin/vigily /usr/local/bin/vigily
+COPY --from=build /usr/local/bin/vigily /usr/local/bin/vigily-engine /usr/local/bin/

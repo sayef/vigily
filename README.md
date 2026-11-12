@@ -83,7 +83,7 @@ and `protoc`:
 ```bash
 git clone https://github.com/sayef/vigily && cd vigily
 (cd crates/vigily-ui && npm ci && npm run build)      # the binary embeds the web app
-cargo build --release -p vigily-cli
+cargo build --release -p vigily-cli -p vigily-server   # vigily and vigily-engine
 uv sync --no-install-project && uv run --no-sync maturin develop --release
 
 uv run --no-sync python examples/demo.py              # synthetic training runs

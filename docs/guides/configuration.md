@@ -9,13 +9,14 @@ the server serves it. A `vigily.toml` adds schedules, an alert webhook and drift
 |---|---|---|
 | `VIGILY_REPO` | SDK, CLI | The repository: a directory or `s3://`, `gs://`, `az://` URI. Default `.vigily` |
 | `VIGILY_PORT` | `vigily up` | The port, default 7600 |
-| `VIGILY_CONFIG` | `vigily up`, `vigily schedules` | The configuration file |
+| `VIGILY_CONFIG` | `vigily up` | The configuration file |
 | `VIGILY_LOG` | CLI | Log filter, for example `info` or `vigily_server=debug` |
 | `VIGILY_ADMIN_TOKEN` | `vigily up --mode server` | The admin token (at least 16 characters); required in server mode, never stored |
 | `VIGILY_ADMIN_TOKEN_FILE` | `vigily up --mode server` | A file holding the admin token, instead of `VIGILY_ADMIN_TOKEN` (Docker secrets) |
 | `VIGILY_TOKEN_FILE` | `vigily up` | Where the local token is kept; default `engines/<key>.token` in the state directory |
 | `VIGILY_STATE_DIR` | `vigily up`, `vigily-engine` | vigily's state directory (engine addresses, local tokens, logs); default `~/Library/Caches/vigily` on macOS and `~/.cache/vigily` elsewhere |
-| `VIGILY_URL`, `VIGILY_TOKEN` | SDK tracing, scheduled commands | The server's address and the token sent with spans; set by the scheduler for its commands |
+| `VIGILY_URL`, `VIGILY_TOKEN` | CLI, SDK tracing, scheduled commands | An engine's address and the token to send; the CLI then uses that engine instead of the repository's local one. Set by the scheduler for its commands |
+| `VIGILY_ENGINE` | CLI | The `vigily-engine` binary to start, when it is neither beside `vigily` nor on `PATH` |
 | `VIGILY_SCHEDULE`, `VIGILY_SCHEDULE_RUN`, `VIGILY_SCHEDULED_FOR` | scheduled commands | Set by the scheduler; runs the command logs link back to the schedule run |
 
 In the Docker image `VIGILY_REPO` is `/data/repo` and `VIGILY_PORT` is 7600; the server reads

@@ -96,6 +96,10 @@ pub struct AppState {
     /// When the last request arrived (UTC microseconds; the start until the first one), for the
     /// idle shutdown of engines started in the background.
     pub last_request: std::sync::atomic::AtomicI64,
+    /// In local mode, the file the local token is kept in (rewritten when it is rotated).
+    pub local_token_file: parking_lot::RwLock<Option<std::path::PathBuf>>,
+    /// The engine file (`engines/<key>.json`) of an engine started by [`engine::run`].
+    pub engine_file: parking_lot::RwLock<Option<std::path::PathBuf>>,
     pub version: &'static str,
 }
 
@@ -153,6 +157,8 @@ impl AppState {
             url: parking_lot::RwLock::new(None),
             refresh_now: tokio::sync::Notify::new(),
             last_request: std::sync::atomic::AtomicI64::new(vigily_core::now_micros()),
+            local_token_file: parking_lot::RwLock::new(None),
+            engine_file: parking_lot::RwLock::new(None),
             version: env!("CARGO_PKG_VERSION"),
         })
     }
@@ -593,6 +599,9 @@ pub async fn serve(
         },
     };
     state.auth.set_mode(mode.clone());
+    if let AuthSetup::Local { token_file } = &opts.auth {
+        *state.local_token_file.write() = Some(token_file.clone());
+    }
     if opts.optimize_at_start {
         optimize(&state).await;
     }

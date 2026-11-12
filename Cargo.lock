@@ -6667,9 +6667,11 @@ name = "vigily-cli"
 version = "0.1.0-beta.1"
 dependencies = [
  "anyhow",
+ "async-trait",
  "clap",
+ "serde_json",
+ "tempfile",
  "tokio",
- "tracing-subscriber",
  "vigily-api",
  "vigily-core",
  "vigily-server",

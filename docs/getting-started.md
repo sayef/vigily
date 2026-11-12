@@ -53,7 +53,7 @@ git clone https://github.com/sayef/vigily && cd vigily
 
 # The web app first: the binary embeds crates/vigily-ui/dist when it is compiled.
 (cd crates/vigily-ui && npm ci && npm run build)
-cargo build --release -p vigily-cli                 # target/release/vigily
+cargo build --release -p vigily-cli -p vigily-server # target/release/vigily and vigily-engine
 
 # The Python SDK, into this repository's virtual environment.
 uv sync --no-install-project && uv run --no-sync maturin develop --release

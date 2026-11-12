@@ -14,7 +14,7 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::auth::{CreateToken, CreatedToken, Me, Revoked, SessionRequest, Tokens};
+use crate::auth::{CreateToken, CreatedToken, Me, Revoked, RotatedToken, SessionRequest, Tokens};
 use crate::chart::{ChartRequest, ChartResponse};
 use crate::evals::{
     Alert, AlertChange, Baseline, CommitDataset, CompareResponse, DataDriftResponse, DatasetInfo,
@@ -665,6 +665,15 @@ impl Client {
     /// `POST auth/tokens`: the new token is in the answer, once.
     pub async fn create_token(&self, req: &CreateToken) -> Result<CreatedToken> {
         self.post("/auth/tokens", req).await
+    }
+
+    /// `POST auth/local-token/rotate`: a local engine's new token (admin).
+    pub async fn rotate_local_token(&self) -> Result<RotatedToken> {
+        self.post(
+            "/auth/local-token/rotate",
+            &Value::Object(Default::default()),
+        )
+        .await
     }
 
     /// `DELETE auth/tokens/{id}`.

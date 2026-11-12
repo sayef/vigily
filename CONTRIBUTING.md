@@ -13,7 +13,7 @@ for you (see [Storage dependency](#storage-dependency)).
 (cd crates/vigily-ui && npm ci && npm run build)   # before cargo: build.rs embeds dist
 cargo build
 uv sync --no-install-project && uv run --no-sync maturin develop
-uv run --no-sync python examples/demo.py && cargo run -p vigily-cli -- up
+uv run --no-sync python examples/demo.py && target/debug/vigily up
 ```
 
 For UI work, `npm run dev` in `crates/vigily-ui` serves the app with hot reload on

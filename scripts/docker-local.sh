@@ -19,9 +19,11 @@ fi
 
 (cd crates/vigily-ui && npm ci --silent --no-audit --no-fund && npm run build --silent)
 CARGO_PROFILE_RELEASE_LTO=false CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16 \
-  cargo zigbuild --release --locked --target "$target.2.36" -p vigily-cli \
+  cargo zigbuild --release --locked --target "$target.2.36" -p vigily-server \
   --features "${FEATURES-s3,gcs,azure}" -j "${JOBS:-6}"
+CARGO_PROFILE_RELEASE_LTO=false CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16 \
+  cargo zigbuild --release --locked --target "$target.2.36" -p vigily-cli -j "${JOBS:-6}"
 mkdir -p "dist/linux/$docker_arch"
-cp "target/$target/release/vigily" "dist/linux/$docker_arch/vigily"
+cp "target/$target/release/vigily" "target/$target/release/vigily-engine" "dist/linux/$docker_arch/"
 docker build --target local -t vigily:local .
 echo "vigily:local is ready: VIGILY_IMAGE=vigily:local docker compose up -d"
