@@ -45,7 +45,6 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, patch, post};
 use axum::{Json, Router};
 use parking_lot::Mutex;
-use serde::Deserialize;
 use vigily_api::chart::{ChartGroup, ChartRequest, ChartResponse, ChartSeries};
 use vigily_api::runs::{
     DeleteRuns, Deleted, Meta, MetricStat, RunDetail, RunFields, RunRow, RunSummary, RunsResponse,
@@ -825,23 +824,7 @@ async fn meta(State(s): State<Arc<AppState>>) -> ApiResult<Meta> {
     }))
 }
 
-#[derive(Deserialize)]
-struct RunsParams {
-    #[serde(default)]
-    q: String,
-    sort: Option<String>,
-    #[serde(default)]
-    desc: bool,
-    #[serde(default)]
-    archived: bool,
-    /// The first matching row to answer with.
-    #[serde(default)]
-    offset: usize,
-    /// At most this many rows (1 to 10 000); every matching row when not set.
-    limit: Option<usize>,
-    #[serde(default)]
-    fields: RunFields,
-}
+use vigily_api::runs::RunsQuery as RunsParams;
 
 async fn runs(
     State(s): State<Arc<AppState>>,

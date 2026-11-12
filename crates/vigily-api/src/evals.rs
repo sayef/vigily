@@ -461,6 +461,9 @@ pub struct Schedule {
     /// A duration such as `15m`.
     pub timeout: String,
     pub retries: u32,
+    /// The wait between attempts, a duration such as `1m`.
+    #[serde(default)]
+    pub retry_delay: String,
     pub missed: MissedPolicy,
     pub enabled: bool,
     /// UTC microseconds; null while the schedule is not running.
@@ -644,4 +647,23 @@ pub struct CommitDataset {
     /// Where the items came from: `sdk`, `jsonl:<file name>`, `csv:<file name>`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
+}
+
+/// `GET datasets/{name}`: the query string.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct DatasetQuery {
+    /// The version; the newest when not set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<u32>,
+    /// Text the items must contain.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub q: String,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub offset: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limit: Option<usize>,
+}
+
+fn is_zero(n: &usize) -> bool {
+    *n == 0
 }

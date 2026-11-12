@@ -12,7 +12,6 @@ use axum::extract::{Path, Query as QueryParams, State};
 use axum::http::StatusCode;
 use axum::routing::get;
 use axum::{Json, Router};
-use serde::Deserialize;
 use serde_json::Value;
 use vigily_api::runs::{RunParams, RunSeries, SeriesPoints};
 use vigily_core::{metric_key, RunEntry, StepRange, TimeRange};
@@ -55,17 +54,7 @@ async fn series(State(s): State<Arc<AppState>>, Path(id): Path<String>) -> ApiRe
     }))
 }
 
-#[derive(Deserialize)]
-struct PointsParams {
-    /// The metric name.
-    name: String,
-    /// The context as a JSON object (`{"subset":"val"}`); none for a series without context.
-    context: Option<String>,
-    /// UTC microseconds: points at or after.
-    start_time: Option<i64>,
-    /// UTC microseconds: points before.
-    stop_time: Option<i64>,
-}
+use vigily_api::runs::PointsQuery as PointsParams;
 
 async fn points(
     State(s): State<Arc<AppState>>,

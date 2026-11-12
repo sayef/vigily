@@ -177,6 +177,239 @@ impl EnginePaths {
     }
 }
 
+#[cfg(feature = "client")]
+pub use resolve::{engine_binary, probe, resolve, Found, Resolve, ResolveError};
+
+/// Finding the engine of a repository, and starting one when none runs (feature `client`).
+#[cfg(feature = "client")]
+mod resolve {
+    use std::path::PathBuf;
+    use std::time::Duration;
+
+    use super::{canonical_location, state_dir, EngineFile, EnginePaths};
+    use crate::client::Client;
+    use crate::Info;
+
+    /// How long a client waits for an engine it started.
+    pub const START_TIMEOUT: Duration = Duration::from_secs(30);
+
+    /// How long the address in an engine file gets to answer `GET info`.
+    pub const PROBE_TIMEOUT: Duration = Duration::from_millis(300);
+
+    /// What [`resolve`] looks for.
+    #[derive(Clone, Debug, Default)]
+    pub struct Resolve {
+        /// The repository: a directory or an object-store URI.
+        pub repo: String,
+        /// An engine's address (`VIGILY_URL`): used as given, never started.
+        pub url: Option<String>,
+        /// The token to send (`VIGILY_TOKEN`); a local engine's own token otherwise.
+        pub token: Option<String>,
+        /// Start an engine when none serves the repository.
+        pub start: bool,
+        /// The state directory; `$VIGILY_STATE_DIR` or the user's cache directory by default.
+        pub state_dir: Option<PathBuf>,
+        /// The engine binary to start; [`engine_binary`] by default.
+        pub engine: Option<PathBuf>,
+        /// The port a started engine tries first (it takes any free one when that is taken).
+        pub port: Option<u16>,
+    }
+
+    impl Resolve {
+        /// `repo`, with `VIGILY_URL` and `VIGILY_TOKEN` from the environment, starting an
+        /// engine when needed.
+        pub fn from_env(repo: &str) -> Self {
+            let var = |n: &str| std::env::var(n).ok().filter(|v| !v.is_empty());
+            Resolve {
+                repo: repo.to_string(),
+                url: var("VIGILY_URL"),
+                token: var("VIGILY_TOKEN"),
+                start: true,
+                ..Default::default()
+            }
+        }
+    }
+
+    /// Where the client came from.
+    #[derive(Clone, Debug, PartialEq)]
+    pub enum Found {
+        /// The address given (`VIGILY_URL`).
+        Url,
+        /// A running local engine.
+        Running(EngineFile),
+        /// A local engine this call started.
+        Started(EngineFile),
+    }
+
+    /// Why no engine was found.
+    #[derive(Debug)]
+    pub enum ResolveError {
+        /// No home directory and no state directory given.
+        NoStateDir,
+        /// No engine serves the repository and starting one was not asked for.
+        NotRunning { repo: String },
+        /// The engine binary is nowhere to be found.
+        NoEngine,
+        /// The engine was started but did not come up.
+        Start(String),
+    }
+
+    impl std::fmt::Display for ResolveError {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            match self {
+                ResolveError::NoStateDir => f.write_str(
+                    "no home directory for vigily's state; set VIGILY_STATE_DIR",
+                ),
+                ResolveError::NotRunning { repo } => write!(
+                    f,
+                    "no engine serves {repo}; start one with `vigily up`, or set VIGILY_URL"
+                ),
+                ResolveError::NoEngine => f.write_str(
+                    "vigily-engine was not found beside this program or on PATH; install it, or set VIGILY_ENGINE to its path",
+                ),
+                ResolveError::Start(m) => f.write_str(m),
+            }
+        }
+    }
+
+    impl std::error::Error for ResolveError {}
+
+    fn exe_name() -> &'static str {
+        if cfg!(windows) {
+            "vigily-engine.exe"
+        } else {
+            "vigily-engine"
+        }
+    }
+
+    /// The engine binary: `$VIGILY_ENGINE`, else beside the running program, else on PATH.
+    pub fn engine_binary() -> Option<PathBuf> {
+        if let Some(p) = std::env::var_os("VIGILY_ENGINE").filter(|p| !p.is_empty()) {
+            return Some(PathBuf::from(p));
+        }
+        let beside = std::env::current_exe()
+            .ok()
+            .and_then(|e| e.parent().map(|d| d.join(exe_name())))
+            .filter(|p| p.is_file());
+        beside.or_else(|| {
+            std::env::split_paths(&std::env::var_os("PATH")?)
+                .map(|d| d.join(exe_name()))
+                .find(|p| p.is_file())
+        })
+    }
+
+    /// Whether an engine answers `GET info` at `url` within [`PROBE_TIMEOUT`].
+    pub async fn probe(url: &str) -> Option<Info> {
+        let http = reqwest::Client::builder()
+            .timeout(PROBE_TIMEOUT)
+            .build()
+            .ok()?;
+        let res = http
+            .get(format!("{}/api/v1/info", url.trim_end_matches('/')))
+            .send()
+            .await
+            .ok()?;
+        if !res.status().is_success() {
+            return None;
+        }
+        res.json().await.ok()
+    }
+
+    /// The engine file of a running engine: present, its lock held, and answering.
+    async fn running(paths: &EnginePaths) -> Option<EngineFile> {
+        let f = paths.read()?;
+        if !paths.is_locked() {
+            return None;
+        }
+        probe(&f.url).await?;
+        Some(f)
+    }
+
+    fn client(f: &EngineFile, token: &Option<String>) -> Client {
+        Client::new(&f.url, token.clone().or_else(|| f.token.clone()))
+    }
+
+    /// A client for the engine of `r.repo`: the address given, else the running local engine,
+    /// else (with `r.start`) a local engine started with `--detach` and waited for (at most
+    /// [`START_TIMEOUT`]). Clients racing to start one end up with the same engine: the
+    /// repository's lock lets only one of them serve.
+    pub async fn resolve(r: &Resolve) -> Result<(Client, Found), ResolveError> {
+        if let Some(url) = &r.url {
+            return Ok((Client::new(url, r.token.clone()), Found::Url));
+        }
+        let dir = r
+            .state_dir
+            .clone()
+            .or_else(state_dir)
+            .ok_or(ResolveError::NoStateDir)?;
+        let canonical = canonical_location(&r.repo);
+        let paths = EnginePaths::new(&dir, &canonical);
+        if let Some(f) = running(&paths).await {
+            return Ok((client(&f, &r.token), Found::Running(f)));
+        }
+        if !r.start {
+            return Err(ResolveError::NotRunning {
+                repo: r.repo.clone(),
+            });
+        }
+        let bin = r
+            .engine
+            .clone()
+            .or_else(engine_binary)
+            .ok_or(ResolveError::NoEngine)?;
+        let mut cmd = std::process::Command::new(&bin);
+        cmd.arg("--repo")
+            .arg(&canonical)
+            .args(["--idle-timeout", "30m", "--detach"])
+            .arg("--state-dir")
+            .arg(&dir)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped());
+        if let Some(p) = r.port {
+            cmd.arg("--port").arg(p.to_string());
+        }
+        let mut child = cmd
+            .spawn()
+            .map_err(|e| ResolveError::Start(format!("could not start {}: {e}", bin.display())))?;
+        let deadline = tokio::time::Instant::now() + START_TIMEOUT;
+        let mut exited = None;
+        loop {
+            if let Some(f) = running(&paths).await {
+                return Ok((client(&f, &r.token), Found::Started(f)));
+            }
+            if exited.is_none() {
+                if let Ok(Some(status)) = child.try_wait() {
+                    exited = Some(status);
+                    // 3: another engine serves the repository (a racing client started it);
+                    // keep waiting for its file.
+                    if !status.success() && status.code() != Some(3) {
+                        let mut err = String::new();
+                        if let Some(mut e) = child.stderr.take() {
+                            let _ = std::io::Read::read_to_string(&mut e, &mut err);
+                        }
+                        return Err(ResolveError::Start(format!(
+                            "the engine for {} did not start ({status}): {}; see {}",
+                            r.repo,
+                            err.trim(),
+                            paths.log.display()
+                        )));
+                    }
+                }
+            }
+            if tokio::time::Instant::now() >= deadline {
+                return Err(ResolveError::Start(format!(
+                    "the engine for {} did not answer within {} seconds; see {}",
+                    r.repo,
+                    START_TIMEOUT.as_secs(),
+                    paths.log.display()
+                )));
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

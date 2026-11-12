@@ -182,15 +182,7 @@ async fn list_datasets(State(s): State<Arc<AppState>>) -> ApiResult<Vec<evals::D
     Ok(Json(v))
 }
 
-#[derive(Deserialize)]
-struct DatasetParams {
-    version: Option<u32>,
-    #[serde(default)]
-    q: String,
-    #[serde(default)]
-    offset: usize,
-    limit: Option<usize>,
-}
+use vigily_api::evals::DatasetQuery as DatasetParams;
 
 async fn dataset(
     State(s): State<Arc<AppState>>,
@@ -749,6 +741,7 @@ async fn schedules(State(s): State<Arc<AppState>>) -> ApiResult<SchedulesRespons
             workdir,
             timeout: c.timeout.clone(),
             retries: c.retries,
+            retry_delay: c.retry_delay.clone(),
             missed: c.missed,
             enabled: c.enabled,
             next_run: next.get(&c.name).copied(),
