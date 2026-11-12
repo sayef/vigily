@@ -418,9 +418,13 @@ on a focused chart; `Ctrl K` everywhere.
 
 axum on Tokio. The API is read-mostly JSON; responses are gzip-compressed. Series ids are 64-bit and
 travel as strings (JavaScript numbers lose them). `vigily up` binds to `127.0.0.1` and rejects
-requests whose `Host` is not a loopback name, so a DNS-rebinding page cannot read runs. There is no
-authentication: vigily is a single-user tool, and a shared deployment belongs behind the
-operator's own proxy.
+requests whose `Host` is not a loopback name, so a DNS-rebinding page cannot read runs. Every API
+route but health, info and `auth/me` needs a token. I kept it to tokens on purpose: locally one
+random token per repository, traded once for an HttpOnly cookie through the link `vigily up`
+prints, so a single user never types anything; on a shared server an admin token from the
+environment and hashed tokens with three scopes (`read`, `ingest`, `admin`). Routes are grouped by
+scope and each request carries an `AuthContext`, so accounts can come later without touching the
+handlers.
 
 ## Python SDK
 

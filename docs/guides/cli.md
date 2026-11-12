@@ -22,11 +22,14 @@ Every command takes `--repo` (`-r`): a directory or an object-store URI such as
 | `--optimize-every` | `15m` | How often storage is optimized in the background; at least `1m` |
 | `--optimize-at-start` | off | Also optimize before serving: indexed charts from the first request, about 3 s slower start-up and more memory at once |
 | `--no-optimize` | off | Never optimize in the background |
+| `--mode` | `local` on a loopback address, else `server` | `local`: the repository's token; `server`: needs `VIGILY_ADMIN_TOKEN` and accepts scoped tokens |
+| `--token-file` | per repository under `~/.cache/vigily/tokens` | Where local mode keeps its token; also `VIGILY_TOKEN_FILE` |
+| `--insecure-no-auth` | off | Check no tokens at all, for an engine behind your own access control |
 
-On localhost the server checks the `Host` header against DNS rebinding. It has no sign-in: before
-serving on another address, put it behind your own access control (see
-[self-hosting](storage.md#serving-to-a-team)). `VIGILY_LOG` sets the log filter, for example
-`VIGILY_LOG=vigily_server=debug`.
+In local mode `vigily up` prints a link with the repository's token; opening it signs the browser
+in. On localhost the server also checks the `Host` header against DNS rebinding. See
+[Tokens](configuration.md#tokens) for both modes and scoped tokens. `VIGILY_LOG` sets the log
+filter, for example `VIGILY_LOG=vigily_server=debug`.
 
 ## vigily runs
 

@@ -74,9 +74,15 @@ when the interpreter exits normally; call `vigily.tracing.flush()` before `os._e
 short-lived worker must not lose its last spans. If the server cannot be reached, the batch is
 retried twice and then dropped with one warning on stderr: tracing never fails your program.
 
+The server needs a token for spans like for any other write ([Tokens](configuration.md#tokens)):
+set `VIGILY_TOKEN` to the local token from the link `vigily up` prints, or on a shared server to an
+access token with the `ingest` scope. Scheduled commands get one automatically. Without it the
+server answers 401, and the exporter warns once and drops the batch.
+
 | Setting | Default |
 |---|---|
 | `vigily.tracing.configure(url=...)` or `VIGILY_URL` | `http://127.0.0.1:7600` |
+| `configure(token=...)` or `VIGILY_TOKEN` | none: the token spans are sent with (`Authorization: Bearer`) |
 | `configure(enabled=False)` or `VIGILY_TRACING=off` | on |
 | `configure(batch_size=, flush_interval=, max_queue=)` | 256 spans, 1 s, 10 000 queued spans |
 
@@ -84,7 +90,9 @@ retried twice and then dropped with one warning on stderr: tracing never fails y
 
 The server also accepts **OTLP/HTTP with JSON encoding** at `POST /v1/traces`, so an application
 instrumented with OpenTelemetry can send to vigily directly (set the exporter's endpoint to
-`http://127.0.0.1:7600` and its protocol to `http/json`; protobuf is refused with 415). GenAI
+`http://127.0.0.1:7600`, its protocol to `http/json` and its headers to
+`Authorization=Bearer <token>`, for example with
+`OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer $VIGILY_TOKEN"`; protobuf is refused with 415). GenAI
 semantic-convention attributes become the span's model (`gen_ai.request.model`,
 `gen_ai.response.model`), provider (`gen_ai.provider.name`, `gen_ai.system`), usage
 (`gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`, cache reads) and inputs and outputs

@@ -28,8 +28,11 @@ Yes, to the same directory or bucket. See [many writers, one reader](guides/stor
 
 ## Is there sign-in or access control?
 
-Not yet. Serve it on localhost, or behind a reverse proxy that authenticates; see
-[serving to a team](guides/storage.md#serving-to-a-team).
+Tokens. On localhost, `vigily up` prints a link with the repository's token that signs the browser
+in. A shared server needs an admin token and accepts scoped tokens (`read`, `ingest`, `admin`) for
+people and scripts; see [Tokens](guides/configuration.md#tokens) and
+[serving to a team](guides/storage.md#serving-to-a-team). Accounts and single sign-on are not
+there yet.
 
 ## Can the web app run commands?
 
