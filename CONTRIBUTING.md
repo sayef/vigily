@@ -123,12 +123,23 @@ A tag pushed by hand (`git tag v0.1.0 && git push origin v0.1.0`) goes through s
 well. Tags with a suffix, such as `v0.1.0-beta.2` or `v0.1.0-rc.1`, stay pre-releases and never
 become `latest`: the release, the `X.Y` image tag and the `latest` image tag are left alone.
 
-**PyPI.** Once the binaries and the Python package built, the Release workflow's `pypi` job uploads
-the SDK's pure-Python wheel and its sdist to PyPI as `vigily`, pre-releases included: `v0.1.0-beta.1` becomes `0.1.0b1`,
-which PyPI marks as a pre-release and pip installs only with `--pre` or an exact version. It uses
-trusted publishing, with no token. The trusted publisher on PyPI is: project `vigily`, owner
-`sayef`, repository `vigily`, workflow `release.yml`, environment `pypi`. Renaming the workflow file
-or the environment breaks the upload until the publisher is updated to match.
+**PyPI.** Once the binaries and the Python packages built, the Release workflow uploads two projects
+to PyPI, pre-releases included (`v0.1.0-beta.1` becomes `0.1.0b1`, which PyPI marks as a
+pre-release and pip installs only with `--pre` or an exact version):
+
+- `vigily` (the `pypi` job): the SDK's pure-Python wheel and its sdist.
+- `vigily-engine` (the `pypi-engine` job): the engine's platform wheels, built by maturin from
+  `crates/vigily-server/pyproject.toml` (`bindings = "bin"`) for Linux x86_64 and arm64 (manylinux
+  2_28), Linux x86_64 with musl (musllinux 1.2) and macOS arm64 and x86_64. `pip install
+  'vigily[local]'` installs it. There is no sdist: building the engine needs the web app and Rust.
+
+Both use trusted publishing, with no token. PyPI needs one trusted publisher per project, both with
+owner `sayef`, repository `vigily`, workflow `release.yml` and environment `pypi`: project `vigily`,
+and a second (pending) publisher for project `vigily-engine`, to add before the first release that
+publishes it. Renaming the workflow file or the environment breaks the uploads until the publishers
+are updated to match. A pull request that changes `release.yml`, `.github/scripts/install-protoc.sh`
+or `crates/vigily-server/pyproject.toml` builds the engine wheels (and reports their sizes) without
+publishing anything.
 
 **crates.io.** Nothing is published there yet: kv0 is not on crates.io. Once `kv0 0.1.0-beta.1` is:
 

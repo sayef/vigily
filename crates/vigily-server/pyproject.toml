@@ -1,0 +1,35 @@
+[build-system]
+requires = ["maturin>=1.8,<2"]
+build-backend = "maturin"
+
+[project]
+name = "vigily-engine"
+description = "The vigily engine: serves a repository's runs, evaluations and traces to the web app, the CLI and the Python SDK"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Saiful Islam" }]
+requires-python = ">=3.11"
+keywords = ["experiment-tracking", "machine-learning", "mlops"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Rust",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dynamic = ["version"]
+
+[project.urls]
+Homepage = "https://github.com/sayef/vigily"
+Issues = "https://github.com/sayef/vigily/issues"
+Changelog = "https://github.com/sayef/vigily/blob/main/CHANGELOG.md"
+
+# The wheel holds one file, the vigily-engine binary, installed into the environment's scripts
+# directory where the Python SDK looks for it. The version is the workspace's (0.1.0-beta.3 is
+# 0.1.0b3).
+[tool.maturin]
+bindings = "bin"
+strip = true
+features = ["s3", "gcs", "azure"]

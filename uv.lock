@@ -92,6 +92,11 @@ wheels = [
 name = "vigily"
 source = { editable = "." }
 
+[package.optional-dependencies]
+local = [
+    { name = "vigily-engine" },
+]
+
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
@@ -99,9 +104,15 @@ dev = [
 ]
 
 [package.metadata]
+requires-dist = [{ name = "vigily-engine", marker = "extra == 'local'", directory = "crates/vigily-server" }]
+provides-extras = ["local"]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "pytest", specifier = ">=8" },
     { name = "ruff", specifier = ">=0.6" },
 ]
+
+[[package]]
+name = "vigily-engine"
+source = { directory = "crates/vigily-server" }

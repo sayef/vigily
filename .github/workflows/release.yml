@@ -6,9 +6,11 @@ name: Release
 #   2. push the image to ghcr.io with its version tags;
 #   3. install the release with scripts/install.sh and run it on older distributions;
 #   4. only when all of that passed, mark the release as the latest and tag the image `latest`.
-# A failure leaves a pre-release that `latest` downloads never see. Once the binaries and the package
-# built, the SDK's wheel (pure Python) and sdist go to PyPI (pre-release tags too: v0.1.0-beta.1 is
-# 0.1.0b1, which pip installs only when asked). Nothing goes to crates.io yet (see release-plz.toml).
+# A failure leaves a pre-release that `latest` downloads never see. Once the binaries and the packages
+# built, the SDK's wheel (pure Python) and sdist go to PyPI as `vigily`, and the engine's platform
+# wheels as `vigily-engine` (pre-release tags too: v0.1.0-beta.1 is 0.1.0b1, which pip installs only
+# when asked). A pull request that changes how the engine wheels are built builds them, and
+# publishes nothing. Nothing goes to crates.io yet (see release-plz.toml).
 # Nothing runs until the RELEASE_ENABLED repository variable is `true` (see CONTRIBUTING.md).
 on:
   push:
@@ -20,6 +22,12 @@ on:
     workflows: [Release-plz]
     types: [completed]
     branches: [main]
+  # Build (never publish) the engine wheels when the way they are built changes.
+  pull_request:
+    paths:
+      - .github/workflows/release.yml
+      - .github/scripts/install-protoc.sh
+      - crates/vigily-server/pyproject.toml
   workflow_dispatch:
     inputs:
       tag:
@@ -32,11 +40,13 @@ permissions:
 jobs:
   tag:
     if: >-
-      github.repository_owner == 'sayef' && vars.RELEASE_ENABLED == 'true'
-      && (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success')
+      github.event_name == 'pull_request'
+      || (github.repository_owner == 'sayef' && vars.RELEASE_ENABLED == 'true'
+          && (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'))
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.tag.outputs.tag }}
+      ref: ${{ steps.tag.outputs.ref }}
       prerelease: ${{ steps.tag.outputs.prerelease }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -51,23 +61,30 @@ jobs:
           INPUT_TAG: ${{ inputs.tag }}
         run: |
           case "$EVENT" in
-            workflow_run) tag=$(git tag --points-at HEAD --list 'v*' | sort -V | tail -n 1) ;;
+            # release-plz tags the release pull request's own commit; merged with a merge commit,
+            # the tag sits on the merge's second parent rather than on HEAD.
+            workflow_run)
+              tag=$( { git tag --points-at HEAD --list 'v*'
+                       if git rev-parse -q --verify 'HEAD^2' >/dev/null; then git tag --points-at 'HEAD^2' --list 'v*'; fi
+                     } | sort -V | tail -n 1) ;;
             workflow_dispatch) tag=$(git tag --list "$INPUT_TAG" | grep -x 'v.*' || true) ;;
+            pull_request) tag="" ;;
             *) tag=$([[ "$GITHUB_REF" == refs/tags/v* ]] && echo "$GITHUB_REF_NAME" || true) ;;
           esac
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "ref=${tag:-$(git rev-parse HEAD)}" >> "$GITHUB_OUTPUT"
           # v1.2.0-rc.1 and the like stay pre-releases and never become `latest`.
           [[ "$tag" == *-* ]] && echo "prerelease=true" >> "$GITHUB_OUTPUT" || echo "prerelease=false" >> "$GITHUB_OUTPUT"
           echo "Release tag: ${tag:-none}"
 
   ui:
     needs: tag
-    if: needs.tag.outputs.tag != ''
+    if: needs.tag.outputs.tag != '' || github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ needs.tag.outputs.tag }}
+          ref: ${{ needs.tag.outputs.ref }}
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -83,6 +100,7 @@ jobs:
 
   binary:
     needs: [tag, ui]
+    if: needs.tag.outputs.tag != ''
     strategy:
       fail-fast: false
       matrix:
@@ -98,7 +116,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ needs.tag.outputs.tag }}
+          ref: ${{ needs.tag.outputs.ref }}
           persist-credentials: false
           path: vigily
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -143,7 +161,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ needs.tag.outputs.tag }}
+          ref: ${{ needs.tag.outputs.ref }}
           persist-credentials: false
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
@@ -157,6 +175,53 @@ jobs:
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: wheels-sdk
+          path: dist
+
+  engine-wheels:
+    # vigily-engine as platform wheels (`pip install 'vigily[local]'`): the binary alone, built by
+    # maturin (bindings = "bin", crates/vigily-server/pyproject.toml) for the release archives'
+    # platforms, in manylinux 2_28 and musllinux containers, stripped to stay well under PyPI's
+    # 100 MB file limit.
+    needs: [tag, ui]
+    if: needs.tag.outputs.tag != '' || github.event_name == 'pull_request'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, target: x86_64, manylinux: "2_28" }
+          - { os: ubuntu-24.04-arm, target: aarch64, manylinux: "2_28" }
+          - { os: ubuntu-latest, target: x86_64, manylinux: musllinux_1_2 }
+          - { os: macos-latest, target: aarch64 }
+          - { os: macos-latest, target: x86_64 }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.tag.outputs.ref }}
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ui-dist
+          path: crates/vigily-ui/dist
+      - if: runner.os == 'macOS'
+        run: brew install protobuf
+      - uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
+        with:
+          target: ${{ matrix.target }}
+          manylinux: ${{ matrix.manylinux || 'auto' }}
+          before-script-linux: .github/scripts/install-protoc.sh
+          args: --release --strip --locked --out dist --manifest-path crates/vigily-server/Cargo.toml
+      - name: The wheel's size
+        run: |
+          ls -l dist
+          for w in dist/*.whl; do
+            size=$(wc -c < "$w")
+            echo "$(basename "$w"): $((size / 1024 / 1024)) MiB" >> "$GITHUB_STEP_SUMMARY"
+            test "$size" -lt 100000000
+          done
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: engine-wheels-${{ matrix.os }}-${{ matrix.target }}-${{ matrix.manylinux || 'native' }}
           path: dist
 
   # Trusted publishing: PyPI accepts this workflow file in the `pypi` environment (see
@@ -174,6 +239,27 @@ jobs:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: wheels-*
+          path: dist
+          merge-multiple: true
+      - uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
+        with:
+          skip-existing: true
+
+  # The engine's wheels as `vigily-engine`, the same way: PyPI needs a second trusted publisher for
+  # that project (see CONTRIBUTING.md).
+  pypi-engine:
+    needs: [tag, binary, engine-wheels]
+    if: >-
+      github.repository_owner == 'sayef' && vars.RELEASE_ENABLED == 'true'
+      && needs.tag.outputs.tag != ''
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: engine-wheels-*
           path: dist
           merge-multiple: true
       - uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
@@ -211,7 +297,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ needs.tag.outputs.tag }}
+          ref: ${{ needs.tag.outputs.ref }}
           persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
