@@ -1,38 +1,51 @@
-# vigily as a server: `VIGILY_ADMIN_TOKEN=$(openssl rand -hex 32) docker compose up -d` (or put the
-# variable in a .env file next to this one), then open http://localhost:7600 and sign in with that
-# token. The engine runs in server mode and refuses to start without it. This runs the
+# vigily as a shared engine: `VIGILY_ADMIN_TOKEN=$(openssl rand -hex 32) docker compose up -d` (or
+# put the variable in a .env file next to this one), then open http://localhost:7600 and sign in
+# with that token. The engine runs in server mode and refuses to start without it. This runs the
 # published image (ghcr.io/sayef/vigily); VIGILY_IMAGE picks another tag, such as
 # ghcr.io/sayef/vigily:v0.1.0-beta.1, or vigily:local from scripts/docker-local.sh.
 #
 # To build the image from this checkout instead, add compose.dev.yaml:
 #   docker compose -f compose.yaml -f compose.dev.yaml up -d --build
 #
-# To log runs from scripts on this machine, keep the data in a directory here instead of a volume,
-# owned by you, and point the SDK at it:
-#   mkdir -p vigily-data
-#   VIGILY_DATA=./vigily-data VIGILY_UID=$(id -u) VIGILY_GID=$(id -g) docker compose up -d
-#   VIGILY_REPO=./vigily-data/repo python train.py
+# Scripts log over HTTP with a token that has the read and ingest scopes (ingest alone cannot read
+# back the run it creates):
+#   docker compose exec vigily sh -c \
+#     'vigily --url http://127.0.0.1:7600 --token "$VIGILY_ADMIN_TOKEN" tokens create train --scope read --scope ingest'
+#   VIGILY_URL=http://localhost:7600 VIGILY_TOKEN=vgy_... python train.py
+#
+# docs/guides/team-server.md covers tokens, TLS and backups for an engine shared by a team.
 name: vigily
 
 services:
   vigily:
     image: ${VIGILY_IMAGE:-ghcr.io/sayef/vigily:latest}
     restart: unless-stopped
-    # The image's user by default; your own ids when the data is a directory on this machine.
-    user: "${VIGILY_UID:-10001}:${VIGILY_GID:-10001}"
-    # Published on this machine only. Every request needs the admin token or an access token
-    # (docs/guides/configuration.md, "Tokens"); put TLS in front before exposing it further.
+    # Published on this machine only. Every request needs the admin token or an access token; put
+    # TLS in front before exposing it further (docs/guides/team-server.md).
     ports: ["127.0.0.1:${VIGILY_HOST_PORT:-7600}:7600"]
     environment:
       # Required: the admin token (at least 16 characters). Never stored by vigily.
       VIGILY_ADMIN_TOKEN: ${VIGILY_ADMIN_TOKEN:?set VIGILY_ADMIN_TOKEN, for example to the output of openssl rand -hex 32}
       # Optional; see docs/guides/configuration.md.
       VIGILY_LOG: ${VIGILY_LOG:-warn,vigily=info}
-      # A directory inside the container, or an object-store URI (s3://, gs://, az://). Not read
-      # from VIGILY_REPO, which on this machine points the SDK at the same data by its host path.
-      VIGILY_REPO: ${VIGILY_SERVER_REPO:-/data/repo}
-    # The named volume, or a directory on this machine (VIGILY_DATA=./vigily-data).
-    volumes: ["${VIGILY_DATA:-vigily}:/data"]
+    # The repository (/data/repo) and an optional /data/vigily.toml.
+    volumes: ["vigily:/data"]
+    # On `docker compose stop` the engine lets open requests finish (up to 10 s) and writes out what
+    # it holds in memory; leave it time for that before Docker kills it.
+    stop_grace_period: 30s
+
+  # A training script in a container on the same network logs to http://vigily:7600. Uncomment,
+  # create a token as above and set VIGILY_TOKEN (here or in .env).
+  # trainer:
+  #   image: python:3.13-slim
+  #   depends_on:
+  #     vigily: {condition: service_healthy}
+  #   environment:
+  #     VIGILY_URL: http://vigily:7600
+  #     VIGILY_TOKEN: ${VIGILY_TOKEN:?create a token with vigily tokens create}
+  #   volumes: ["./:/work:ro"]
+  #   working_dir: /work
+  #   command: ["sh", "-c", "pip install --quiet vigily && python train.py"]
 
 volumes:
   vigily:
