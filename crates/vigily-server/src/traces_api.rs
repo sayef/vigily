@@ -16,7 +16,7 @@ use std::sync::Arc;
 use axum::body::Bytes;
 use axum::extract::{DefaultBodyLimit, Path, Query as QueryParams, State};
 use axum::http::{HeaderMap, StatusCode};
-use axum::routing::{get, post};
+use axum::routing::{delete, get, post};
 use axum::{Json, Router};
 use serde::Deserialize;
 use serde_json::Value;
@@ -26,6 +26,7 @@ use vigily_api::traces::{
 };
 use vigily_core::traces::{self, IngestReport, SpanIn, TraceSummary};
 
+use crate::auth::Scoped;
 use crate::{ApiError, AppState};
 
 type ApiResult<T> = Result<Json<T>, ApiError>;
@@ -33,30 +34,35 @@ type ApiResult<T> = Result<Json<T>, ApiError>;
 /// The largest ingest request body.
 pub const MAX_INGEST_BYTES: usize = 32 * 1024 * 1024;
 
-/// The tracing routes, relative to the API root.
-pub fn routes() -> Router<Arc<AppState>> {
-    Router::new()
-        .route(
+/// The tracing routes, relative to the API root, by the scope they need.
+pub fn routes() -> Scoped {
+    Scoped::default()
+        .ingest(Router::new().route(
             "/traces/ingest",
             post(ingest).layer(DefaultBodyLimit::max(MAX_INGEST_BYTES)),
+        ))
+        .read(
+            Router::new()
+                .route("/traces", get(list))
+                .route("/traces/{id}", get(one)),
         )
-        .route("/traces", get(list))
-        .route("/traces/{id}", get(one).delete(delete))
+        .admin(Router::new().route("/traces/{id}", delete(delete_one)))
 }
 
 /// Tracing routes added with `/api/v1`, which have no alias under `/api`.
-pub fn v1_routes() -> Router<Arc<AppState>> {
-    Router::new()
-        .route("/traces/delete", post(delete_many))
-        .route("/tracing/policy", get(policy))
+pub fn v1_routes() -> Scoped {
+    Scoped::default()
+        .read(Router::new().route("/tracing/policy", get(policy)))
+        .admin(Router::new().route("/traces/delete", post(delete_many)))
 }
 
-/// OpenTelemetry's OTLP/HTTP endpoint, at the root where exporters expect it.
-pub fn otlp_routes() -> Router<Arc<AppState>> {
-    Router::new().route(
+/// OpenTelemetry's OTLP/HTTP endpoint, at the root where exporters expect it. It needs the
+/// `ingest` scope like every other write.
+pub fn otlp_routes() -> Scoped {
+    Scoped::default().ingest(Router::new().route(
         "/v1/traces",
         post(ingest_otlp).layer(DefaultBodyLimit::max(MAX_INGEST_BYTES)),
-    )
+    ))
 }
 
 fn bad(m: impl Into<String>) -> ApiError {
@@ -271,7 +277,10 @@ async fn one(State(s): State<Arc<AppState>>, Path(id): Path<String>) -> ApiResul
     }))
 }
 
-async fn delete(State(s): State<Arc<AppState>>, Path(id): Path<String>) -> ApiResult<TraceDeleted> {
+async fn delete_one(
+    State(s): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> ApiResult<TraceDeleted> {
     let deleted = {
         let _one_at_a_time = s.ingest_lock.lock().await;
         traces::delete(&*s.records, &id).await?

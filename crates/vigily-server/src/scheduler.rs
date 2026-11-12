@@ -16,7 +16,10 @@
 //! - Old runs and their output are pruned (`keep_runs`, `keep_days`, `keep_output`).
 //! - Runs that were going when the server stopped are marked interrupted at the next start.
 //! - The command gets `VIGILY_REPO`, `VIGILY_SCHEDULE`, `VIGILY_SCHEDULE_RUN` and
-//!   `VIGILY_SCHEDULED_FOR`, so runs it logs through the SDK link back to the schedule run.
+//!   `VIGILY_SCHEDULED_FOR`, so runs it logs through the SDK link back to the schedule run, and
+//!   `VIGILY_URL` with the engine's address. When the engine checks tokens it also gets
+//!   `VIGILY_TOKEN`: a token with the `read` and `ingest` scopes, held in memory, that expires
+//!   with the attempt (its timeout plus five minutes) and is revoked when the command exits.
 //!
 //! Security: commands run as the server's user, with its permissions and environment plus the
 //! schedule's `env`. They come only from the configuration file; the API cannot add, change or
@@ -31,6 +34,8 @@ use croner::Cron;
 use tokio::io::AsyncReadExt;
 use vigily_core::evals::{self, Alert, AlertKind, ScheduleRun, ScheduleRunStatus, Severity};
 use vigily_core::now_micros;
+
+use vigily_api::auth::Scope;
 
 use crate::config::{MissedPolicy, ScheduleConfig};
 use crate::AppState;
@@ -487,7 +492,7 @@ async fn run_once(
     attempt: u32,
     recorded: Option<ScheduleRun>,
 ) -> ScheduleRun {
-    let mut rec = match recorded {
+    let rec = match recorded {
         Some(r) => r,
         None => {
             let r = running_record(cfg, at, attempt);
@@ -520,6 +525,33 @@ async fn run_once(
             Ok(())
         });
     }
+    if let Some(url) = state.url.read().clone() {
+        cmd.env("VIGILY_URL", url);
+    }
+    let token = state.auth.mode().required().then(|| {
+        state.auth.issue_ephemeral(
+            &format!("schedule:{}", cfg.name),
+            &[Scope::Read, Scope::Ingest],
+            cfg.timeout() + std::time::Duration::from_secs(5 * 60),
+        )
+    });
+    if let Some(t) = &token {
+        cmd.env("VIGILY_TOKEN", t);
+    }
+    let rec = run_child(state, cfg, cmd, rec).await;
+    if let Some(t) = &token {
+        state.auth.revoke_ephemeral(t);
+    }
+    rec
+}
+
+/// Runs a prepared command to its end or its timeout and records how it went.
+async fn run_child(
+    state: &AppState,
+    cfg: &ScheduleConfig,
+    mut cmd: tokio::process::Command,
+    mut rec: ScheduleRun,
+) -> ScheduleRun {
     let mut child = match cmd.spawn() {
         Ok(c) => c,
         Err(e) => {

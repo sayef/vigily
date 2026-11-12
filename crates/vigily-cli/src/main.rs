@@ -8,7 +8,7 @@ use std::net::{IpAddr, SocketAddr};
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use vigily_core::{now_micros, Catalog, Query};
-use vigily_server::{serve, AppState, ServeOptions};
+use vigily_server::{serve, AppState, AuthSetup, ServeOptions};
 
 const DEFAULT_PORT: u16 = 7600;
 
@@ -30,6 +30,36 @@ struct Cli {
     repo: String,
     #[command(subcommand)]
     command: Command,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+enum Mode {
+    Local,
+    Server,
+}
+
+/// The local token's default file: one per repository under the state directory.
+fn default_token_file(repo: &str) -> Result<std::path::PathBuf> {
+    let dir = match std::env::var_os("VIGILY_STATE_DIR").filter(|d| !d.is_empty()) {
+        Some(d) => std::path::PathBuf::from(d),
+        None => {
+            let home = std::env::var_os("HOME")
+                .or_else(|| std::env::var_os("USERPROFILE"))
+                .context("no home directory to keep the local token in; pass --token-file")?;
+            std::path::PathBuf::from(home).join(".cache").join("vigily")
+        }
+    };
+    // The same repository under another spelling (./runs, runs/) gets the same token.
+    let key = if repo.contains("://") {
+        repo.to_string()
+    } else {
+        std::fs::canonicalize(repo)
+            .unwrap_or_else(|_| std::path::PathBuf::from(repo))
+            .to_string_lossy()
+            .to_string()
+    };
+    let hash = vigily_core::tokens::hash(&key);
+    Ok(dir.join("tokens").join(format!("{}.token", &hash[..16])))
 }
 
 #[derive(Subcommand)]
@@ -54,6 +84,19 @@ enum Command {
         /// ./vigily.toml when it exists.
         #[arg(long, env = "VIGILY_CONFIG")]
         config: Option<std::path::PathBuf>,
+        /// `local`: one user on this machine, with the repository's token. `server`: a shared
+        /// engine that needs VIGILY_ADMIN_TOKEN (or VIGILY_ADMIN_TOKEN_FILE) and accepts scoped
+        /// tokens. Defaults to local on a loopback address and server on any other.
+        #[arg(long, value_enum)]
+        mode: Option<Mode>,
+        /// Where the local token is kept. Defaults to a file per repository under
+        /// $VIGILY_STATE_DIR (or ~/.cache/vigily)/tokens.
+        #[arg(long, env = "VIGILY_TOKEN_FILE")]
+        token_file: Option<std::path::PathBuf>,
+        /// Check no tokens at all. Anyone who can reach the port can read runs, change them and
+        /// run schedules: only behind your own access control.
+        #[arg(long)]
+        insecure_no_auth: bool,
     },
     /// Delete traces by id; with --erase, also erase them from storage (as `vigily runs purge`).
     Traces {
@@ -156,7 +199,33 @@ async fn main() -> Result<()> {
             optimize_every,
             optimize_at_start,
             config,
+            mode,
+            token_file,
+            insecure_no_auth,
         } => {
+            let server = match mode {
+                Some(m) => *m == Mode::Server,
+                None => !host.is_loopback(),
+            };
+            let auth = if *insecure_no_auth {
+                AuthSetup::Off { server }
+            } else if server {
+                match vigily_server::auth::admin_token_from_env().map_err(|e| anyhow::anyhow!(e))? {
+                    Some(admin_token) => AuthSetup::Server { admin_token },
+                    None => anyhow::bail!(
+                        "server mode needs an admin token: set VIGILY_ADMIN_TOKEN (or VIGILY_ADMIN_TOKEN_FILE) \
+                         to a long random value, such as the output of `openssl rand -hex 32`. \
+                         To serve without any sign-in behind your own access control, pass --insecure-no-auth"
+                    ),
+                }
+            } else {
+                AuthSetup::Local {
+                    token_file: match token_file {
+                        Some(f) => f.clone(),
+                        None => default_token_file(&cli.repo)?,
+                    },
+                }
+            };
             let config_path = config.clone().or_else(|| {
                 let p = std::path::PathBuf::from("vigily.toml");
                 p.exists().then_some(p)
@@ -190,25 +259,26 @@ async fn main() -> Result<()> {
                 optimize: !no_optimize,
                 optimize_every: *optimize_every,
                 optimize_at_start: *optimize_at_start,
+                auth: auth.clone(),
             };
             let repo = cli.repo.clone();
             eprintln!("vigily {} reading {repo}", env!("CARGO_PKG_VERSION"));
-            if !host.is_loopback() {
+            if let AuthSetup::Off { .. } = auth {
                 eprintln!(
-                    "warning: serving on {host} without sign-in: anyone who can reach this port can read runs, \
-                     schedule commands and their output. Put vigily behind your own access control."
+                    "warning: serving without sign-in (--insecure-no-auth): anyone who can reach this port can \
+                     read and change runs and start schedules. Put vigily behind your own access control."
                 );
             }
             if !vigily_ui::is_built() {
                 eprintln!("warning: built without the web app; only the API is served");
             }
-            serve(state, opts, |addr| {
-                let shown = if addr.ip().is_unspecified() {
-                    SocketAddr::new([127, 0, 0, 1].into(), addr.port())
-                } else {
-                    addr
-                };
-                eprintln!("Open http://{shown} (Ctrl-C to stop)");
+            serve(state, opts, |ready| match (&ready.sign_in_url, &auth) {
+                (Some(link), _) => eprintln!("Open {link} (Ctrl-C to stop)"),
+                (None, AuthSetup::Server { .. }) => eprintln!(
+                    "Serving {} in server mode: sign in with the admin token or an access token (Ctrl-C to stop)",
+                    ready.url
+                ),
+                (None, _) => eprintln!("Open {} (Ctrl-C to stop)", ready.url),
             })
             .await
             .with_context(|| format!("could not listen on {host}:{port}"))?;

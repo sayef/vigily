@@ -23,40 +23,50 @@ use vigily_core::drift::{self, DriftConfig, Suite};
 use vigily_core::evals::{self, Alert, Baseline, EvalResult, Item, Label, ScheduleRun};
 use vigily_core::{now_micros, stats, RunEntry, RunStatus};
 
+use crate::auth::Scoped;
 use crate::{ApiError, AppState};
 
 type ApiResult<T> = Result<Json<T>, ApiError>;
 
-/// The evaluation routes, relative to the API root.
-pub fn routes() -> Router<Arc<AppState>> {
-    Router::new()
-        .route("/datasets", get(list_datasets))
-        .route("/datasets/{name}", get(dataset))
-        .route("/runs/{id}/items", get(run_items))
-        .route("/runs/{id}/labels", post(add_label))
-        .route("/runs/{id}/audit", get(audit))
-        .route("/compare", get(compare))
-        .route("/schedules", get(schedules))
-        .route("/schedules/{name}/runs", get(schedule_runs))
-        .route("/schedules/{name}/runs/{id}", get(schedule_run))
-        .route("/suites", get(suites))
-        .route("/suites/{key}", get(suite))
-        .route("/suites/{key}/baseline", put(set_baseline))
-        .route("/suites/{key}/data-drift", get(data_drift))
-        .route("/alerts", get(alerts))
-        .route("/alerts/{id}", post(update_alert))
+/// The evaluation routes, relative to the API root, by the scope they need.
+pub fn routes() -> Scoped {
+    Scoped::default()
+        .read(
+            Router::new()
+                .route("/datasets", get(list_datasets))
+                .route("/datasets/{name}", get(dataset))
+                .route("/runs/{id}/items", get(run_items))
+                .route("/runs/{id}/audit", get(audit))
+                .route("/compare", get(compare))
+                .route("/schedules", get(schedules))
+                .route("/schedules/{name}/runs", get(schedule_runs))
+                .route("/schedules/{name}/runs/{id}", get(schedule_run))
+                .route("/suites", get(suites))
+                .route("/suites/{key}", get(suite))
+                .route("/suites/{key}/data-drift", get(data_drift))
+                .route("/alerts", get(alerts)),
+        )
+        .admin(
+            Router::new()
+                .route("/runs/{id}/labels", post(add_label))
+                .route("/suites/{key}/baseline", put(set_baseline))
+                .route("/alerts/{id}", post(update_alert)),
+        )
 }
 
 /// Evaluation routes added with `/api/v1`, which have no alias under `/api`.
-pub fn v1_routes() -> Router<Arc<AppState>> {
-    Router::new()
-        .route("/datasets/{name}/versions", get(dataset_versions))
-        .route(
-            "/datasets/{name}/versions/{version}/items",
-            get(dataset_items),
+pub fn v1_routes() -> Scoped {
+    Scoped::default()
+        .read(
+            Router::new()
+                .route("/datasets/{name}/versions", get(dataset_versions))
+                .route(
+                    "/datasets/{name}/versions/{version}/items",
+                    get(dataset_items),
+                )
+                .route("/runs/{id}/results", get(run_results)),
         )
-        .route("/runs/{id}/results", get(run_results))
-        .route("/schedules/{name}/run", post(run_schedule))
+        .admin(Router::new().route("/schedules/{name}/run", post(run_schedule)))
 }
 
 fn bad(m: impl Into<String>) -> ApiError {
@@ -421,6 +431,7 @@ async fn run_results(
 async fn add_label(
     State(s): State<Arc<AppState>>,
     Path(id): Path<String>,
+    by: Option<axum::Extension<crate::auth::AuthContext>>,
     Json(b): Json<NewLabel>,
 ) -> ApiResult<Label> {
     eval_entry(&s, &id)?;
@@ -459,6 +470,7 @@ async fn add_label(
                 .map(|c| c.trim().chars().take(4000).collect())
                 .filter(|c: &String| !c.is_empty()),
             created_at: 0,
+            by: by.map(|c| c.principal.clone()),
         },
     )
     .await?;
@@ -643,7 +655,7 @@ async fn audit(
     let labels: Vec<Value> = evals::labels(&*s.records, &id)
         .await?
         .into_iter()
-        .map(|l| json!({"item_id": l.item_id, "name": l.name, "value": l.value, "passed": l.passed, "comment": l.comment, "recorded_at": utc(l.created_at), "source": "vigily web app"}))
+        .map(|l| json!({"item_id": l.item_id, "name": l.name, "value": l.value, "passed": l.passed, "comment": l.comment, "recorded_at": utc(l.created_at), "source": "vigily web app", "by": l.by}))
         .collect();
     let r = &e.run;
     let doc = json!({
