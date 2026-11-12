@@ -1,8 +1,9 @@
 name: Benchmarks
 
-# Logs synthetic runs with bench/scale.py and times the server's API with bench/scale.sh, on demand:
-# by hand, or on a pull request labelled `bench`. Report-only: shared runners are noisy, so the
-# numbers go to the job summary and never fail the build.
+# Logs synthetic runs with bench/scale.py and times the server's API with bench/scale.sh, and
+# measures ingest through the SDK with bench/ingest.py and bench/compare.sh, on demand: by hand, or
+# on a pull request labelled `bench`. Report-only: shared runners are noisy, so the numbers go to
+# the job summary and never fail the build.
 on:
   workflow_dispatch:
     inputs:
@@ -12,6 +13,9 @@ on:
       points:
         description: Points per run
         default: "1000"
+      base:
+        description: Commit or branch whose engine bench/compare.sh measures against
+        default: origin/main
   pull_request:
     types: [labeled, synchronize]
 
@@ -33,6 +37,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          # bench/compare.sh builds the base commit's engine from a worktree.
+          fetch-depth: 0
       - run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
         with:
@@ -56,5 +62,18 @@ jobs:
             uv run --no-sync python bench/scale.py --runs "$RUNS" --points "$POINTS" --repo "$RUNNER_TEMP/scale"
             target/release/vigily stop --repo "$RUNNER_TEMP/scale" >/dev/null
             bash bench/scale.sh "$RUNNER_TEMP/scale"
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Ingest through the SDK, against the base commit's engine
+        env:
+          BASE: ${{ inputs.base || github.event.pull_request.base.sha }}
+          # Runners have 4 vCPUs: one process per core.
+          ARGS: --procs 4 --runs 4 --points 100000
+        run: |
+          {
+            echo "## Ingest benchmark: $ARGS"
+            echo
+            echo '```'
+            bash bench/compare.sh "$BASE"
             echo '```'
           } | tee -a "$GITHUB_STEP_SUMMARY"

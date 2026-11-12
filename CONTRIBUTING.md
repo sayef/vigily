@@ -97,8 +97,13 @@ runs `npm run qa` and keeps the screens the README and the docs use
 ## Benchmarks
 
 `bench/scale.py` logs synthetic runs and `bench/scale.sh` times the server's API on them (see
-[architecture](docs/architecture.md)). The Benchmarks workflow runs both on demand, or on a pull
-request labelled `bench`, and writes the timings to the job summary; it never fails the build.
+[architecture](docs/architecture.md)). `bench/ingest.py` measures ingest through the SDK: N
+processes each log R runs of P points into an engine, and it reports `track()` latency, points per
+second per process and for the engine until `vigily.flush()` returns, the engine's CPU time and
+memory, and how long new points take to become readable. `bench/compare.sh [base]` runs it against
+the engine of another commit (default `origin/main`) and this checkout's. The Benchmarks workflow
+runs them on demand, or on a pull request labelled `bench`, and writes the numbers to the job
+summary; it never fails the build.
 
 ## Releasing
 
