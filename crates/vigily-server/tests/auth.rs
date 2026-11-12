@@ -543,6 +543,8 @@ async fn serve_keeps_the_local_token_in_a_private_file_and_checks_the_host() {
         auth: vigily_server::AuthSetup::Local {
             token_file: file.clone(),
         },
+        port_fallback: false,
+        stop: None,
     };
     let task = tokio::spawn(vigily_server::serve(state, opts, move |r| {
         let _ = tx.send(r.clone());

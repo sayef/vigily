@@ -17,6 +17,7 @@
 //! - [`traces`]: spans, trace summaries, the payload policy, and the traces list and detail.
 //! - [`auth`]: scopes, who a request is, sessions and access tokens.
 //! - [`ingest`]: the batches of operations a client writes runs with, and their reports.
+//! - [`local`]: where an engine on this machine writes down its address and token.
 //!
 //! The wire format is pinned by golden JSON files in `tests/fixtures`: every answer type reads
 //! its fixture and writes it back unchanged, keys in the same order.
@@ -27,6 +28,7 @@ pub mod chart;
 pub mod drift;
 pub mod evals;
 pub mod ingest;
+pub mod local;
 pub mod model;
 pub mod runs;
 pub mod traces;

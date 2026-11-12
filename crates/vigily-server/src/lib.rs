@@ -19,9 +19,13 @@
 //! header, a `Link` to its successor and the flat `{"error": "..."}` body of earlier releases.
 //! OpenTelemetry's `POST /v1/traces` stays at the root.
 
+// The engine's start-up future (storage, records, scheduler, monitor) nests deeply.
+#![recursion_limit = "256"]
+
 pub mod admin_api;
 pub mod auth;
 pub mod config;
+pub mod engine;
 pub mod evals_api;
 pub mod monitor;
 pub mod runs_api;
@@ -90,6 +94,9 @@ pub struct AppState {
     pub url: parking_lot::RwLock<Option<String>>,
     /// Wakes the background catalog refresh early (after a write).
     pub(crate) refresh_now: tokio::sync::Notify,
+    /// When the last request arrived (UTC microseconds; the start until the first one), for the
+    /// idle shutdown of engines started in the background.
+    pub last_request: std::sync::atomic::AtomicI64,
     pub version: &'static str,
 }
 
@@ -146,6 +153,7 @@ impl AppState {
             auth: auth::Auth::new(opts.auth),
             url: parking_lot::RwLock::new(None),
             refresh_now: tokio::sync::Notify::new(),
+            last_request: std::sync::atomic::AtomicI64::new(vigily_core::now_micros()),
             version: env!("CARGO_PKG_VERSION"),
         })
     }
@@ -374,8 +382,22 @@ pub fn router(state: Arc<AppState>) -> Router {
             state.clone(),
             auth::guard,
         ))
+        .layer(axum::middleware::from_fn_with_state(state.clone(), touch))
         .layer(tower_http::compression::CompressionLayer::new())
         .with_state(state)
+}
+
+/// Notes the time of every request (see [`AppState::last_request`]).
+async fn touch(
+    State(s): State<Arc<AppState>>,
+    req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> Response {
+    s.last_request.store(
+        vigily_core::now_micros(),
+        std::sync::atomic::Ordering::Relaxed,
+    );
+    next.run(req).await
 }
 
 /// The largest error body that is rewritten into the structured shape; extractor rejections are a
@@ -446,6 +468,11 @@ pub struct ServeOptions {
     pub optimize_at_start: bool,
     /// How requests are authenticated.
     pub auth: AuthSetup,
+    /// When the port is taken, listen on any free one instead of failing (engines started in
+    /// the background).
+    pub port_fallback: bool,
+    /// Stops the server when notified (besides Ctrl-C and SIGTERM).
+    pub stop: Option<Arc<tokio::sync::Notify>>,
 }
 
 /// How [`serve`] authenticates requests.
@@ -467,6 +494,55 @@ pub struct Ready {
     pub url: String,
     /// In local mode, `url` with the token, which signs the browser in (`/?token=...`).
     pub sign_in_url: Option<String>,
+    /// In local mode, the repository's token.
+    pub token: Option<String>,
+}
+
+/// How long open requests may take to finish once the server is asked to stop.
+pub const SHUTDOWN_GRACE: Duration = Duration::from_secs(10);
+
+/// Resolves on Ctrl-C, and on SIGTERM on Unix (`docker stop`, `kill`).
+pub async fn stop_signal() {
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{signal, SignalKind};
+        match signal(SignalKind::terminate()) {
+            Ok(mut term) => {
+                tokio::select! {
+                    _ = tokio::signal::ctrl_c() => {}
+                    _ = term.recv() => {}
+                }
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "cannot listen for SIGTERM");
+                let _ = tokio::signal::ctrl_c().await;
+            }
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = tokio::signal::ctrl_c().await;
+    }
+}
+
+/// Writes out what an engine still holds in memory: the open run writers' points, then the
+/// store and the records, and closes the store.
+pub async fn flush_on_exit(state: &AppState) {
+    for w in state.writes.writers.drain() {
+        if let Err(e) = w.flush().await {
+            tracing::warn!(run = %w.info().id, error = %e, "could not flush a run on exit");
+        }
+    }
+    let store = state.catalog.store();
+    if let Err(e) = store.flush().await {
+        tracing::warn!(error = %e, "could not flush storage on exit");
+    }
+    if let Err(e) = state.records.flush().await {
+        tracing::warn!(error = %e, "could not flush the records on exit");
+    }
+    if let Err(e) = store.close().await {
+        tracing::warn!(error = %e, "could not close storage on exit");
+    }
 }
 
 async fn optimize(state: &AppState) {
@@ -495,7 +571,9 @@ fn release_memory() {
     }
 }
 
-/// Serves until Ctrl-C. Refreshes the catalog before listening and then in the background.
+/// Serves until Ctrl-C, SIGTERM or [`ServeOptions::stop`], then lets open requests finish (at most
+/// [`SHUTDOWN_GRACE`]) and [flushes](flush_on_exit) storage. Refreshes the catalog before
+/// listening and then in the background.
 pub async fn serve(
     state: Arc<AppState>,
     opts: ServeOptions,
@@ -519,14 +597,15 @@ pub async fn serve(
     if opts.optimize_at_start {
         optimize(&state).await;
     }
+    let mut background = Vec::new();
     if opts.optimize {
         let (bg, every) = (state.clone(), opts.optimize_every);
-        tokio::spawn(async move {
+        background.push(tokio::spawn(async move {
             loop {
                 tokio::time::sleep(every).await;
                 optimize(&bg).await;
             }
-        });
+        }));
     }
     if let Err(e) = state.catalog.refresh().await {
         tracing::warn!(error = %e, "initial catalog refresh failed");
@@ -534,7 +613,7 @@ pub async fn serve(
     scheduler::start(state.clone());
     monitor::start(state.clone());
     let bg = state.clone();
-    tokio::spawn(async move {
+    background.push(tokio::spawn(async move {
         loop {
             // A write wakes the refresh early, so new runs and points show up at once.
             tokio::select! {
@@ -545,12 +624,18 @@ pub async fn serve(
                 tracing::warn!(error = %e, "catalog refresh failed");
             }
         }
-    });
+    }));
     let mut app = router(state.clone());
     if opts.local_only {
         app = app.layer(axum::middleware::from_fn(local_only));
     }
-    let listener = tokio::net::TcpListener::bind(opts.addr).await?;
+    let listener = match tokio::net::TcpListener::bind(opts.addr).await {
+        Err(e) if opts.port_fallback && e.kind() == std::io::ErrorKind::AddrInUse => {
+            tracing::info!(addr = %opts.addr, "port taken; listening on a free one");
+            tokio::net::TcpListener::bind(SocketAddr::new(opts.addr.ip(), 0)).await?
+        }
+        r => r?,
+    };
     let addr = listener.local_addr()?;
     let shown = if addr.ip().is_unspecified() {
         SocketAddr::new([127, 0, 0, 1].into(), addr.port())
@@ -559,20 +644,46 @@ pub async fn serve(
     };
     let url = format!("http://{shown}");
     *state.url.write() = Some(url.clone());
-    let sign_in_url = match &mode {
-        auth::AuthMode::Local { token } => Some(format!("{url}/?token={token}")),
+    let token = match &mode {
+        auth::AuthMode::Local { token } => Some(token.clone()),
         _ => None,
     };
+    let sign_in_url = token.as_ref().map(|t| format!("{url}/?token={t}"));
     ready(&Ready {
         addr,
         url,
         sign_in_url,
+        token,
     });
-    axum::serve(listener, app)
-        .with_graceful_shutdown(async {
-            let _ = tokio::signal::ctrl_c().await;
-        })
-        .await
+    let stopping = Arc::new(tokio::sync::Notify::new());
+    let stop = opts.stop.clone();
+    let signal = stopping.clone();
+    let server = axum::serve(listener, app).with_graceful_shutdown(async move {
+        match stop {
+            Some(stop) => tokio::select! {
+                _ = stop_signal() => {}
+                _ = stop.notified() => {}
+            },
+            None => stop_signal().await,
+        }
+        tracing::info!("stopping");
+        signal.notify_one();
+    });
+    let served = tokio::select! {
+        r = server => r,
+        _ = async {
+            stopping.notified().await;
+            tokio::time::sleep(SHUTDOWN_GRACE).await;
+        } => {
+            tracing::warn!("requests still open after {SHUTDOWN_GRACE:?}; stopping anyway");
+            Ok(())
+        }
+    };
+    for task in background {
+        task.abort();
+    }
+    flush_on_exit(&state).await;
+    served
 }
 
 /// Rejects requests whose `Host` is not loopback, so a DNS-rebinding page cannot read the API.
