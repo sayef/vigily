@@ -1,23 +1,25 @@
 """Log a synthetic set of runs to try vigily without training anything.
 
-    uv run --no-sync python examples/demo.py          # writes ./.vigily
-    vigily up                                       # then open http://127.0.0.1:7600
+    uv run --no-sync python examples/demo.py          # writes ./.vigily through its engine
+    vigily open                                     # the web app, signed in
 
 Every value is generated: four experiments with hyperparameter sweeps, three evaluation runs,
 noisy train and validation curves, system metrics, a 200 000-point run, runs that diverge and
 fail, runs that were stopped, two that are still running, and synthetic LLM traces (a support
-assistant's retrieval, tool and model calls, with token usage priced from an example price table).
+assistant's retrieval, tool and model calls, with token usage). The engine prices token usage from
+its configuration: with `vigily up --config examples/vigily.toml` the traces show costs from the
+example price table there.
 """
 
 from __future__ import annotations
 
 import argparse
-import json
 import math
 import os
 import random
 import time
 
+import vigily
 from vigily import Dataset, Repo, Run, evaluate
 from vigily import evaluators as ev
 
@@ -385,17 +387,6 @@ def evals(repo: str, now: float) -> None:
         )
 
 
-# An example price table (per million tokens) for the synthetic models; not real prices.
-EXAMPLE_TRACING = {
-    "payloads": "truncated",
-    "currency": "EUR",
-    "prices": {
-        "example-large": {"input": 2.5, "output": 10.0, "cached_input": 1.25},
-        "example-small": {"input": 0.15, "output": 0.6},
-        "example-embed": {"input": 0.02, "output": 0.0},
-    },
-}
-
 QUESTIONS = [
     "Where is order A-1001?",
     "How do I change the delivery address of order B-2002?",
@@ -521,7 +512,8 @@ def traces(location: str, rng: random.Random, now: float) -> None:
             }
         )
     spans = [{k: v for k, v in sp.items() if v is not None} for sp in spans]
-    Repo(location)._repo.put_spans(json.dumps(spans), json.dumps(EXAMPLE_TRACING))
+    # Sent like the spans `vigily.trace` records, to the engine of the run.
+    vigily.tracing.export(spans)
     run.finish(ended_at=now - 2 * DAY + 48 * 3600)
 
 
@@ -541,14 +533,14 @@ def main() -> None:
     evals(args.repo, now)
     traces(args.repo, rng, now)
     repo = Repo(args.repo)
-    repo.flush()
     runs = repo.runs()
     print(f"Logged {len(runs)} runs to {repo.location} in {time.perf_counter() - began:.1f} s.")
     print(
-        "Serve them with: vigily up" + ("" if args.repo == ".vigily" else f" --repo {args.repo}"),
+        "Open them with: vigily open" + ("" if args.repo == ".vigily" else f" --repo {args.repo}"),
         flush=True,
     )
-    # Leave the live runs running: skip the exit hook that would finish them.
+    # Leave the live runs running: send everything, then skip the exit hook that would finish them.
+    vigily.flush()
     os._exit(0)
 
 
