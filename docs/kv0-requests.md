@@ -7,7 +7,7 @@ tracking layer (`kv0::tracking`) through two adapters:
 
 ## Status
 
-vigily builds against kv0 `main`, which has every feature below except 7 and 23. Items 16 onward
+vigily builds against kv0 `main`, which has every feature below except 7, 23 and 24. Items 16 onward
 came up later, while I was building vigily on the first ones. Where vigily uses each:
 
 | Feature | Status | Where vigily uses it |
@@ -35,6 +35,7 @@ came up later, while I was building vigily on the first ones. Where vigily uses 
 | 21. Folding superseded run rows (kv0 #15) | Done | Heartbeat rows (one every 2 minutes per open run) are folded by the background optimize |
 | 22. A cheap check for the old shared records table | Done | `has_legacy_records()`: one directory listing on each open and in `vigily runs purge` |
 | 23. Several item ids, or an item-id prefix, per records query | Not done | Traces store spans in one row per batch and keep span ids in a row of their own; see below |
+| 24. Batched point writes, `track_many` | Not done | The engine's ingest writes a batch's points one `track` call at a time; see below |
 
 The sections below are the original plans for each feature, kept for their reasoning.
 
@@ -191,3 +192,16 @@ stores one row per ingested batch (`tspan/<trace>/<n>`), reads a trace with one 
 keeps every span id in a per-trace row (`tsid/<trace>`) to ignore a span sent twice, which grows
 with the trace and is rewritten by every batch. With `item_ids` or a prefix, a trace page is one
 query, and a resent span simply supersedes its own row.
+
+## 24. Batched point writes (`track_many`)
+
+**API.** `Run::track_many(name, context, steps: &[i64], values: &[f64], epochs: Option<&[Option<i64>]>,
+timestamps: Option<&[i64]>)`: the points of one series in columns, written with one log append and
+one buffer lock, the series resolved once.
+
+**Why.** From beta.3 clients send points to the engine in columnar batches (`POST /api/v1/ingest`),
+and the engine is the only writer. `RunWriter::track_batch` hands each batch's columns to storage;
+today it loops over `track`, which hashes the series, takes the step map and the buffer locks and
+appends to the log once per point. For a million points a second across all runs the per-point
+cost has to go, and with steps assigned by the client the step bookkeeping reduces to a maximum
+per batch.
