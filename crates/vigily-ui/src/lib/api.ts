@@ -161,14 +161,22 @@ export interface ChartData {
   missing: string[];
 }
 
+/** A failed request. `code` is the server's machine-readable error code (`not_found`,
+ * `invalid_argument`, `conflict`, ...); `unreachable` when the server did not answer. */
 export class ApiError extends Error {
   constructor(
     readonly status: number,
     message: string,
     readonly position?: number,
+    readonly code: string = "unreachable",
   ) {
     super(message);
   }
+}
+
+/** The body of every failed `/api/v1` request. */
+interface ErrorBody {
+  error?: { code?: string; message?: string; position?: number };
 }
 
 async function request<T>(method: string, path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
@@ -187,33 +195,35 @@ async function request<T>(method: string, path: string, body?: unknown, signal?:
   if (!res.ok) {
     let message = `The server answered ${res.status}.`;
     let position: number | undefined;
+    let code = "internal";
     try {
-      const j = await res.json();
-      message = j.error ?? message;
-      position = j.position;
+      const j = (await res.json()) as ErrorBody;
+      message = j.error?.message ?? message;
+      position = j.error?.position;
+      code = j.error?.code ?? code;
     } catch {
       // not JSON
     }
-    throw new ApiError(res.status, message, position);
+    throw new ApiError(res.status, message, position, code);
   }
   return res.json() as Promise<T>;
 }
 
 export const api = {
-  meta: (signal?: AbortSignal) => request<Meta>("GET", "/api/meta", undefined, signal),
+  meta: (signal?: AbortSignal) => request<Meta>("GET", "/api/v1/meta", undefined, signal),
   runs: (p: { q: string; sort?: string | null; desc?: boolean; archived?: boolean }, signal?: AbortSignal) => {
     const s = new URLSearchParams({ q: p.q });
     if (p.sort) s.set("sort", p.sort);
     if (p.desc) s.set("desc", "true");
     if (p.archived) s.set("archived", "true");
-    return request<RunsResponse>("GET", `/api/runs?${s}`, undefined, signal);
+    return request<RunsResponse>("GET", `/api/v1/runs?${s}`, undefined, signal);
   },
-  run: (id: string, signal?: AbortSignal) => request<RunDetail>("GET", `/api/runs/${encodeURIComponent(id)}`, undefined, signal),
+  run: (id: string, signal?: AbortSignal) => request<RunDetail>("GET", `/api/v1/runs/${encodeURIComponent(id)}`, undefined, signal),
   patchRun: (id: string, patch: Partial<Pick<RunRow, "name" | "experiment" | "description" | "tags" | "archived">> & { status?: "aborted" }) =>
-    request<RunRow>("PATCH", `/api/runs/${encodeURIComponent(id)}`, patch),
-  chart: (req: ChartRequest, signal?: AbortSignal) => request<ChartData>("POST", "/api/chart", req, signal),
+    request<RunRow>("PATCH", `/api/v1/runs/${encodeURIComponent(id)}`, patch),
+  chart: (req: ChartRequest, signal?: AbortSignal) => request<ChartData>("POST", "/api/v1/chart", req, signal),
   /** Deletes runs that are not running; the server refuses the whole request otherwise. */
-  deleteRuns: (ids: string[]) => request<{ deleted: number }>("POST", "/api/runs/delete", { ids }),
+  deleteRuns: (ids: string[]) => request<{ deleted: number }>("POST", "/api/v1/runs/delete", { ids }),
 };
 
 /** Parameters and metrics whose names start with this are captured by the SDK, not set by the user. */
@@ -498,29 +508,29 @@ export interface Alert {
 const enc = encodeURIComponent;
 
 export const evalApi = {
-  datasets: (signal?: AbortSignal) => request<DatasetInfo[]>("GET", "/api/datasets", undefined, signal),
+  datasets: (signal?: AbortSignal) => request<DatasetInfo[]>("GET", "/api/v1/datasets", undefined, signal),
   dataset: (name: string, p: { version?: number | null; q?: string }, signal?: AbortSignal) => {
     const s = new URLSearchParams();
     if (p.version) s.set("version", String(p.version));
     if (p.q) s.set("q", p.q);
-    return request<DatasetResponse>("GET", `/api/datasets/${enc(name)}?${s}`, undefined, signal);
+    return request<DatasetResponse>("GET", `/api/v1/datasets/${enc(name)}?${s}`, undefined, signal);
   },
-  items: (run: string, signal?: AbortSignal) => request<ItemsResponse>("GET", `/api/runs/${enc(run)}/items`, undefined, signal),
+  items: (run: string, signal?: AbortSignal) => request<ItemsResponse>("GET", `/api/v1/runs/${enc(run)}/items`, undefined, signal),
   label: (run: string, l: { item_id: string; name: string; value?: number | null; passed?: boolean | null; comment?: string | null }) =>
-    request<Label>("POST", `/api/runs/${enc(run)}/labels`, l),
-  audit: (run: string, signal?: AbortSignal) => request<Record<string, Json>>("GET", `/api/runs/${enc(run)}/audit`, undefined, signal),
-  compare: (a: string, b: string, signal?: AbortSignal) => request<CompareResponse>("GET", `/api/compare?a=${enc(a)}&b=${enc(b)}`, undefined, signal),
-  schedules: (signal?: AbortSignal) => request<{ config_path: string | null; schedules: Schedule[] }>("GET", "/api/schedules", undefined, signal),
-  scheduleRuns: (name: string, signal?: AbortSignal) => request<{ runs: ScheduleRunSummary[] }>("GET", `/api/schedules/${enc(name)}/runs`, undefined, signal),
-  scheduleRun: (name: string, id: string, signal?: AbortSignal) => request<ScheduleRunDetail>("GET", `/api/schedules/${enc(name)}/runs/${enc(id)}`, undefined, signal),
-  suites: (signal?: AbortSignal) => request<SuiteSummary[]>("GET", "/api/suites", undefined, signal),
+    request<Label>("POST", `/api/v1/runs/${enc(run)}/labels`, l),
+  audit: (run: string, signal?: AbortSignal) => request<Record<string, Json>>("GET", `/api/v1/runs/${enc(run)}/audit`, undefined, signal),
+  compare: (a: string, b: string, signal?: AbortSignal) => request<CompareResponse>("GET", `/api/v1/compare?a=${enc(a)}&b=${enc(b)}`, undefined, signal),
+  schedules: (signal?: AbortSignal) => request<{ config_path: string | null; schedules: Schedule[] }>("GET", "/api/v1/schedules", undefined, signal),
+  scheduleRuns: (name: string, signal?: AbortSignal) => request<{ runs: ScheduleRunSummary[] }>("GET", `/api/v1/schedules/${enc(name)}/runs`, undefined, signal),
+  scheduleRun: (name: string, id: string, signal?: AbortSignal) => request<ScheduleRunDetail>("GET", `/api/v1/schedules/${enc(name)}/runs/${enc(id)}`, undefined, signal),
+  suites: (signal?: AbortSignal) => request<SuiteSummary[]>("GET", "/api/v1/suites", undefined, signal),
   suite: (key: string, run: string | null, signal?: AbortSignal) =>
-    request<SuiteDetail>("GET", `/api/suites/${enc(key)}${run ? `?run=${enc(run)}` : ""}`, undefined, signal),
-  setBaseline: (key: string, b: Baseline) => request<Baseline>("PUT", `/api/suites/${enc(key)}/baseline`, b),
+    request<SuiteDetail>("GET", `/api/v1/suites/${enc(key)}${run ? `?run=${enc(run)}` : ""}`, undefined, signal),
+  setBaseline: (key: string, b: Baseline) => request<Baseline>("PUT", `/api/v1/suites/${enc(key)}/baseline`, b),
   dataDrift: (key: string, run: string | null, signal?: AbortSignal) =>
-    request<DataDriftResponse>("GET", `/api/suites/${enc(key)}/data-drift${run ? `?run=${enc(run)}` : ""}`, undefined, signal),
-  alerts: (signal?: AbortSignal) => request<Alert[]>("GET", "/api/alerts", undefined, signal),
-  ackAlert: (id: string, acknowledged: boolean) => request<Alert>("POST", `/api/alerts/${enc(id)}`, { acknowledged }),
+    request<DataDriftResponse>("GET", `/api/v1/suites/${enc(key)}/data-drift${run ? `?run=${enc(run)}` : ""}`, undefined, signal),
+  alerts: (signal?: AbortSignal) => request<Alert[]>("GET", "/api/v1/alerts", undefined, signal),
+  ackAlert: (id: string, acknowledged: boolean) => request<Alert>("POST", `/api/v1/alerts/${enc(id)}`, { acknowledged }),
 };
 
 /** How much of a span's inputs and outputs the project stores. */
@@ -629,7 +639,7 @@ export const traceApi = {
   list: (f: TraceFilter, signal?: AbortSignal) => {
     const s = new URLSearchParams();
     for (const [k, v] of Object.entries(f)) if (v !== null && v !== undefined && v !== "") s.set(k, String(v));
-    return request<TracesResponse>("GET", `/api/traces?${s}`, undefined, signal);
+    return request<TracesResponse>("GET", `/api/v1/traces?${s}`, undefined, signal);
   },
-  get: (id: string, signal?: AbortSignal) => request<TraceDetail>("GET", `/api/traces/${enc(id)}`, undefined, signal),
+  get: (id: string, signal?: AbortSignal) => request<TraceDetail>("GET", `/api/v1/traces/${enc(id)}`, undefined, signal),
 };

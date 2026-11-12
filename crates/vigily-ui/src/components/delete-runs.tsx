@@ -44,9 +44,9 @@ const MAX_REQUEST = 10_000;
  * browser refuses the beacon. It holds at most CHUNK ids, so one request carries it. */
 function sendNow(ids: string[]) {
   const body = JSON.stringify({ ids });
-  const queued = navigator.sendBeacon?.("/api/runs/delete", new Blob([body], { type: "application/json" }));
+  const queued = navigator.sendBeacon?.("/api/v1/runs/delete", new Blob([body], { type: "application/json" }));
   if (!queued) {
-    void fetch("/api/runs/delete", { method: "POST", body, headers: { "content-type": "application/json" }, keepalive: true }).catch(() => {});
+    void fetch("/api/v1/runs/delete", { method: "POST", body, headers: { "content-type": "application/json" }, keepalive: true }).catch(() => {});
   }
 }
 

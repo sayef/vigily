@@ -38,10 +38,10 @@ uv run --no-sync python examples/eval_demo.py --repo "$WORK/demo"
 "$BIN" up --repo "$WORK/demo" --config examples/vigily.toml --port "$PORT" > "$WORK/up.log" 2>&1 &
 SERVER=$!
 for _ in $(seq 60); do
-  curl -fsS -o /dev/null "http://127.0.0.1:$PORT/api/health" && break
+  curl -fsS -o /dev/null "http://127.0.0.1:$PORT/api/v1/health" && break
   sleep 0.5
 done
-curl -fsS -o /dev/null "http://127.0.0.1:$PORT/api/health" || { cat "$WORK/up.log" >&2; exit 1; }
+curl -fsS -o /dev/null "http://127.0.0.1:$PORT/api/v1/health" || { cat "$WORK/up.log" >&2; exit 1; }
 
 (cd crates/vigily-ui && VIGILY_URL="http://127.0.0.1:$PORT" npm run qa -- "$ROOT/target/qa")
 uv run --no-project --with pillow python assets/src/screenshots.py "$ROOT/target/qa"

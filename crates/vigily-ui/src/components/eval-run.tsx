@@ -340,7 +340,7 @@ export function AuditTab({ run }: { run: RunDetail }) {
       </p>
       <div>
         <Button asChild variant="brand">
-          <a href={`/api/runs/${encodeURIComponent(run.id)}/audit?download=true`} download>
+          <a href={`/api/v1/runs/${encodeURIComponent(run.id)}/audit?download=true`} download>
             <Download /> Export the audit record (JSON)
           </a>
         </Button>
