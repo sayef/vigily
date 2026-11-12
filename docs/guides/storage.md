@@ -34,8 +34,10 @@ appear. kv0 compacts the small files each finished run adds, and the server opti
 
 ## Serving to a team
 
-Run `vigily up` in server mode: it needs an admin token from the environment and accepts scoped
-tokens for people and scripts (see [Tokens](configuration.md#tokens)). To share it:
+Run the engine (`vigily-engine`, which `vigily up` starts) in server mode: it needs an admin token
+from the environment and accepts scoped tokens for people and scripts (see
+[Tokens](configuration.md#tokens)). With Docker, [Running a team server](team-server.md) has the
+whole setup. Without it:
 
 1. Run it as a dedicated, unprivileged user with `--mode server` and `VIGILY_ADMIN_TOKEN` (or
    `VIGILY_ADMIN_TOKEN_FILE`) set, bound to localhost.
@@ -58,7 +60,7 @@ User=vigily
 WorkingDirectory=/srv/vigily
 # A file only the vigily user can read, holding a long random value.
 Environment=VIGILY_ADMIN_TOKEN_FILE=/srv/vigily/admin-token
-ExecStart=/usr/local/bin/vigily up --mode server --repo /srv/vigily/repo --config /srv/vigily/vigily.toml
+ExecStart=/usr/local/bin/vigily-engine --mode server --repo /srv/vigily/repo --config /srv/vigily/vigily.toml
 KillMode=control-group
 Restart=on-failure
 

@@ -110,16 +110,16 @@ docker compose up -d
 docker compose -f compose.yaml -f compose.dev.yaml up -d --build
 ```
 
-To log runs from scripts on the same machine, keep the data in a directory you own instead of the
-volume, and point the SDK at it:
+Scripts log to it over HTTP with a token that has the `read` and `ingest` scopes:
 
 ```bash
-mkdir -p vigily-data
-VIGILY_DATA=./vigily-data VIGILY_UID=$(id -u) VIGILY_GID=$(id -g) docker compose up -d
-VIGILY_REPO=./vigily-data/repo python train.py
+docker compose exec vigily sh -c \
+  'vigily --url http://127.0.0.1:7600 --token "$VIGILY_ADMIN_TOKEN" tokens create train --scope read --scope ingest'
+VIGILY_URL=http://localhost:7600 VIGILY_TOKEN=vgy_... python train.py
 ```
 
-[Getting started](docs/getting-started.md#run-with-docker) has the details.
+[Getting started](docs/getting-started.md#run-with-docker) has the details, and
+[Running a team server](docs/guides/team-server.md) covers tokens, TLS and backups.
 
 Log a run:
 

@@ -12,6 +12,8 @@ on:
       - Cargo.toml
       - Cargo.lock
       - crates/**
+      - pyproject.toml
+      - python/vigily/**
       - .github/workflows/docker.yml
   pull_request:
     paths: *paths
@@ -51,11 +53,72 @@ jobs:
             sleep 2
           done
           docker inspect -f '{{.State.Health.Status}}' vigily | grep -qx healthy
-          curl -fsS http://127.0.0.1:7600/api/health
+          curl -fsS http://127.0.0.1:7600/api/v1/health
           [ "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:7600/api/v1/runs)" = 401 ]
           curl -fsS -H "Authorization: Bearer $token" http://127.0.0.1:7600/api/v1/runs > /dev/null
           curl -fsS http://127.0.0.1:7600/api/v1/info | grep -q '"mode":"server"'
           curl -fsS http://127.0.0.1:7600/ | grep -qi '<html'
+          docker rm -f vigily > /dev/null
           docker image ls vigily:ci --format '{{.Size}}'
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: false
+      - name: Build the Python SDK
+        run: uv build --wheel --out-dir sdk-dist
+      - name: An SDK in a second container logs over the compose network
+        env:
+          VIGILY_IMAGE: vigily:ci
+        run: |
+          VIGILY_ADMIN_TOKEN=$(openssl rand -hex 32)
+          export VIGILY_ADMIN_TOKEN
+          docker compose up -d --wait --wait-timeout 90
+          # The token a training script uses: read and ingest (ingest alone cannot read back).
+          sdk_token=$(docker compose exec -T vigily sh -c \
+            'vigily --url http://127.0.0.1:7600 --token "$VIGILY_ADMIN_TOKEN" tokens create ci-sdk --scope read --scope ingest' \
+            | awk 'NR == 1')
+          echo "::add-mask::$sdk_token"
+          run_id=$(docker run --rm --network vigily_default \
+            -e VIGILY_URL=http://vigily:7600 -e VIGILY_TOKEN="$sdk_token" \
+            -v "$PWD/sdk-dist:/wheels:ro" python:3.13-slim sh -c '
+              pip install --quiet --no-cache-dir --disable-pip-version-check --root-user-action=ignore /wheels/*.whl
+              python - <<"PY"
+          import vigily
+          run = vigily.Run(experiment="docker-ci", capture_system=False)
+          run.set_params({"lr": 0.1})
+          for step in range(1000):
+              run.track(1.0 / (step + 1), name="loss")
+          run.finish()
+          vigily.flush()
+          print(run.id)
+          PY')
+          echo "logged run $run_id"
+          check() {
+            curl -fsS -H "Authorization: Bearer $VIGILY_ADMIN_TOKEN" \
+              "http://127.0.0.1:7600/api/v1/runs/$run_id" | jq -e '.status == "finished"' > /dev/null
+            n=$(curl -fsS -H "Authorization: Bearer $VIGILY_ADMIN_TOKEN" \
+              "http://127.0.0.1:7600/api/v1/runs/$run_id/points?name=loss" | jq '.steps | length')
+            echo "points: $n"
+            [ "$n" = 1000 ]
+          }
+          check
+          # docker stop sends SIGTERM: the engine writes out what it holds and exits 0, well
+          # within the grace period (a kill would be exit code 137).
+          started=$(date +%s)
+          docker compose stop vigily
+          echo "stopped in $(( $(date +%s) - started )) s"
+          [ "$(docker inspect -f '{{.State.ExitCode}}' vigily-vigily-1)" = 0 ]
+          docker compose logs vigily > engine.log
+          grep -q stopping engine.log
+          if grep 'could not' engine.log; then exit 1; fi
+          docker compose up -d --wait --wait-timeout 90
+          check
       - if: failure()
-        run: docker logs vigily
+        env:
+          VIGILY_IMAGE: vigily:ci
+          VIGILY_ADMIN_TOKEN: only-for-compose-down
+        run: docker logs vigily || docker compose logs vigily || true
+      - if: always()
+        env:
+          VIGILY_IMAGE: vigily:ci
+          VIGILY_ADMIN_TOKEN: only-for-compose-down
+        run: docker compose down -v || true

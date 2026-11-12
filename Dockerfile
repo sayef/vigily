@@ -1,6 +1,6 @@
-# vigily in a container: the web app and API on port 7600, the repository and an optional
-# vigily.toml under /data. `release` (the default) compiles inside Docker; `local` packages a Linux
-# binary built outside it (scripts/docker-local.sh).
+# vigily in a container: the engine (web app and API) on port 7600, the repository and an optional
+# vigily.toml under /data; the `vigily` CLI is in the image too. `release` (the default) compiles
+# inside Docker; `local` packages Linux binaries built outside it (scripts/docker-local.sh).
 #
 #   docker build -t vigily .
 
@@ -48,10 +48,14 @@ VOLUME /data
 EXPOSE 7600
 # bash's /dev/tcp keeps curl out of the image.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --start-interval=2s --retries=3 \
-    CMD ["bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/${VIGILY_PORT} && printf 'GET /api/health HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q '^ok$' <&3"]
-ENTRYPOINT ["vigily"]
-# Inside the container every interface; publish the port only where you want it reachable.
-CMD ["up", "--host", "0.0.0.0"]
+    CMD ["bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/${VIGILY_PORT} && printf 'GET /api/v1/health HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q '^ok$' <&3"]
+# The engine finishes open requests, writes out what it holds in memory and exits on SIGTERM; give
+# it time to do so (`docker stop -t 30`, compose's stop_grace_period).
+STOPSIGNAL SIGTERM
+ENTRYPOINT ["vigily-engine"]
+# Inside the container every interface, so a shared engine that needs VIGILY_ADMIN_TOKEN; publish
+# the port only where you want it reachable.
+CMD ["--host", "0.0.0.0", "--mode", "server"]
 
 # A binary built outside Docker for each platform: scripts/docker-local.sh.
 FROM runtime AS local
