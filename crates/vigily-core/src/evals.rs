@@ -527,14 +527,21 @@ pub async fn put_schedule_run(rs: &dyn RecordStore, r: &ScheduleRun) -> Result<(
     let mut summary = r.clone();
     summary.stdout.clear();
     summary.stderr.clear();
-    let mut rows = vec![(format!("sch/{}/{}", r.schedule, r.id), to_value(&summary))];
+    // The output and the run live in different tables, committed one after the other. The output
+    // goes first, so a reader that sees the run's final status also finds its output.
     if !r.stdout.is_empty() || !r.stderr.is_empty() {
-        rows.push((
+        rs.put(vec![(
             format!("schout/{}/{}", r.schedule, r.id),
             serde_json::json!({ "stdout": r.stdout, "stderr": r.stderr }),
-        ));
+        )])
+        .await?;
+        rs.flush().await?;
     }
-    rs.put(rows).await?;
+    rs.put(vec![(
+        format!("sch/{}/{}", r.schedule, r.id),
+        to_value(&summary),
+    )])
+    .await?;
     rs.flush().await
 }
 
