@@ -16,14 +16,14 @@ path = "src/main.rs"
 [features]
 default = []
 # Object-store backends for repositories on S3, GCS or Azure (local directories always work).
-s3 = ["vigily-core/s3"]
-gcs = ["vigily-core/gcs"]
-azure = ["vigily-core/azure"]
+s3 = ["vigily-core/s3", "vigily-server/s3"]
+gcs = ["vigily-core/gcs", "vigily-server/gcs"]
+azure = ["vigily-core/azure", "vigily-server/azure"]
 
 [dependencies]
 vigily-core.workspace = true
 vigily-server.workspace = true
-vigily-ui.workspace = true
+vigily-api.workspace = true
 anyhow.workspace = true
 clap.workspace = true
 tokio.workspace = true

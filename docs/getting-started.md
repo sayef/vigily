@@ -134,7 +134,8 @@ target/release/vigily up --config examples/vigily.toml
 ```
 
 Open the link `vigily up` prints (`http://127.0.0.1:7600/?token=...`): the token signs your
-browser in and is kept per repository, so the link stays the same. Start on **Runs**, select a few runs with `x` and press `c` to compare
+browser in and is kept per repository, so the link stays the same. One server runs per
+repository: a second `vigily up` on the same one says where the first is. Start on **Runs**, select a few runs with `x` and press `c` to compare
 their curves; then open **Drift** to see what the nightly evaluations found.
 
 ## Log your own run

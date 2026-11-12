@@ -150,6 +150,11 @@ impl WriterRegistry {
         self.slots.lock().remove(run_id);
     }
 
+    /// Closes every writer and hands them over, to be flushed on shutdown.
+    pub fn drain(&self) -> Vec<Arc<dyn RunWriter>> {
+        self.slots.lock().drain().map(|(_, s)| s.writer).collect()
+    }
+
     /// The number of open writers.
     pub fn len(&self) -> usize {
         self.slots.lock().len()

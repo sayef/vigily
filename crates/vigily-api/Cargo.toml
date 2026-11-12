@@ -17,3 +17,5 @@ client = []
 [dependencies]
 serde.workspace = true
 serde_json.workspace = true
+# The key of a repository's engine files (`local`); already in the tree through vigily-core.
+sha2.workspace = true

@@ -39,7 +39,18 @@ Column ids name what the runs table shows and sorts by: `run:name`, `param:hpara
 ## vigily-server
 
 `router()` builds the axum app; `serve()` refreshes the catalog, starts the 2-second refresh loop
-and listens. Handlers are thin: parse, take a snapshot, call core, serialise.
+and listens until Ctrl-C, SIGTERM or an idle stop, then gives open requests 10 seconds and flushes
+open run writers, storage and records (`flush_on_exit`). Handlers are thin: parse, take a
+snapshot, call core, serialise.
+
+`src/main.rs` is the `vigily-engine` binary and `engine.rs` its life cycle: it takes the
+repository's lock (`engines/<key>.lock` in the state directory, `File::try_lock`), keeps the local
+token in `engines/<key>.token`, and once it listens writes `engines/<key>.json` atomically (0600)
+for clients to find it, removing it on exit. `--detach` starts the same binary again in the
+background with its output in `engines/<key>.log` and waits until the JSON file names the new
+process. An engine started that way stops after `--idle-timeout` (30 minutes) without requests,
+running runs with a sign of life in the last 10 minutes, or enabled schedules. The file names and
+the key are in `vigily_api::local`, so clients compute them without the engine's code.
 
 Every route lives under `/api/v1`. The routes of earlier releases (`/api/meta`, `/api/runs`, ...)
 answer as aliases of the same handlers, with `Deprecation: true`, a `Link` header naming the

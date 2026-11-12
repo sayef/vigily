@@ -6656,6 +6656,7 @@ version = "0.1.0-beta.1"
 dependencies = [
  "serde",
  "serde_json",
+ "sha2 0.10.9",
 ]
 
 [[package]]
@@ -6666,9 +6667,9 @@ dependencies = [
  "clap",
  "tokio",
  "tracing-subscriber",
+ "vigily-api",
  "vigily-core",
  "vigily-server",
- "vigily-ui",
 ]
 
 [[package]]
@@ -6704,10 +6705,12 @@ dependencies = [
 name = "vigily-server"
 version = "0.1.0-beta.1"
 dependencies = [
+ "anyhow",
  "async-trait",
  "axum",
  "chrono",
  "chrono-tz",
+ "clap",
  "croner",
  "flate2",
  "futures-util",
@@ -6724,6 +6727,7 @@ dependencies = [
  "tower",
  "tower-http",
  "tracing",
+ "tracing-subscriber",
  "vigily-api",
  "vigily-core",
  "vigily-ui",

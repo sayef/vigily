@@ -163,3 +163,25 @@ def test_heartbeat_moves_last_write_without_changing_fields(repo):
     assert after["updated_at"] > before
     assert (after["name"], after["status"]) == ("hb", "running")
     run.finish()
+
+
+def test_git_info_records_the_commit_hash_and_the_branch(tmp_path):
+    from vigily import _git_info
+
+    def git(*args):
+        subprocess.run(
+            ["git", "-c", "user.name=Test", "-c", "user.email=test@example.com", *args],
+            cwd=tmp_path,
+            check=True,
+            capture_output=True,
+        )
+
+    git("init", "-q", "-b", "feature-x")
+    git("commit", "-q", "--allow-empty", "-m", "first")
+    head = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=tmp_path, check=True, capture_output=True, text=True
+    ).stdout.strip()
+    info = _git_info(str(tmp_path))
+    assert info == {"branch": "feature-x", "commit": head}
+    assert len(info["commit"]) == 40
+    assert _git_info(str(tmp_path / "missing")) is None

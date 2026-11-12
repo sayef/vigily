@@ -13,8 +13,8 @@ the server serves it. A `vigily.toml` adds schedules, an alert webhook and drift
 | `VIGILY_LOG` | CLI | Log filter, for example `info` or `vigily_server=debug` |
 | `VIGILY_ADMIN_TOKEN` | `vigily up --mode server` | The admin token (at least 16 characters); required in server mode, never stored |
 | `VIGILY_ADMIN_TOKEN_FILE` | `vigily up --mode server` | A file holding the admin token, instead of `VIGILY_ADMIN_TOKEN` (Docker secrets) |
-| `VIGILY_TOKEN_FILE` | `vigily up` | Where the local token is kept; default a file per repository under `$VIGILY_STATE_DIR/tokens` |
-| `VIGILY_STATE_DIR` | `vigily up` | vigily's state directory, default `~/.cache/vigily` |
+| `VIGILY_TOKEN_FILE` | `vigily up` | Where the local token is kept; default `engines/<key>.token` in the state directory |
+| `VIGILY_STATE_DIR` | `vigily up`, `vigily-engine` | vigily's state directory (engine addresses, local tokens, logs); default `~/Library/Caches/vigily` on macOS and `~/.cache/vigily` elsewhere |
 | `VIGILY_URL`, `VIGILY_TOKEN` | SDK tracing, scheduled commands | The server's address and the token sent with spans; set by the scheduler for its commands |
 | `VIGILY_SCHEDULE`, `VIGILY_SCHEDULE_RUN`, `VIGILY_SCHEDULED_FOR` | scheduled commands | Set by the scheduler; runs the command logs link back to the schedule run |
 
@@ -39,8 +39,9 @@ Every API request needs a token, except `GET /api/v1/health`, `/api/v1/info` and
 `/api/v1/auth/me` and the web app's own files. `vigily up` runs in one of two modes.
 
 **Local mode** (the default on `127.0.0.1`): one user on this machine. vigily keeps a random
-128-bit token per repository in a file only you can read (`--token-file`, default under
-`~/.cache/vigily/tokens`), the same one each start, and prints a link with it:
+128-bit token per repository in a file only you can read (`--token-file`, default
+`engines/<key>.token` in the [state directory](cli.md#the-state-directory)), the same one each
+start, and prints a link with it:
 
 ```text
 Open http://127.0.0.1:7600/?token=... (Ctrl-C to stop)

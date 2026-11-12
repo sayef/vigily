@@ -3,14 +3,15 @@
 // The server's start-up future (storage, records, scheduler, monitor) nests deeply.
 #![recursion_limit = "256"]
 
-use std::net::{IpAddr, SocketAddr};
+use std::net::IpAddr;
+use std::process::ExitCode;
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use vigily_core::{now_micros, Catalog, Query};
-use vigily_server::{serve, AppState, AuthSetup, ServeOptions};
+use vigily_server::AppState;
 
-const DEFAULT_PORT: u16 = 7600;
+const DEFAULT_PORT: u16 = vigily_api::local::DEFAULT_PORT;
 
 #[derive(Parser)]
 #[command(
@@ -36,30 +37,6 @@ struct Cli {
 enum Mode {
     Local,
     Server,
-}
-
-/// The local token's default file: one per repository under the state directory.
-fn default_token_file(repo: &str) -> Result<std::path::PathBuf> {
-    let dir = match std::env::var_os("VIGILY_STATE_DIR").filter(|d| !d.is_empty()) {
-        Some(d) => std::path::PathBuf::from(d),
-        None => {
-            let home = std::env::var_os("HOME")
-                .or_else(|| std::env::var_os("USERPROFILE"))
-                .context("no home directory to keep the local token in; pass --token-file")?;
-            std::path::PathBuf::from(home).join(".cache").join("vigily")
-        }
-    };
-    // The same repository under another spelling (./runs, runs/) gets the same token.
-    let key = if repo.contains("://") {
-        repo.to_string()
-    } else {
-        std::fs::canonicalize(repo)
-            .unwrap_or_else(|_| std::path::PathBuf::from(repo))
-            .to_string_lossy()
-            .to_string()
-    };
-    let hash = vigily_core::tokens::hash(&key);
-    Ok(dir.join("tokens").join(format!("{}.token", &hash[..16])))
 }
 
 #[derive(Subcommand)]
@@ -89,8 +66,9 @@ enum Command {
         /// tokens. Defaults to local on a loopback address and server on any other.
         #[arg(long, value_enum)]
         mode: Option<Mode>,
-        /// Where the local token is kept. Defaults to a file per repository under
-        /// $VIGILY_STATE_DIR (or ~/.cache/vigily)/tokens.
+        /// Where the local token is kept. Defaults to engines/<key>.token in the state
+        /// directory ($VIGILY_STATE_DIR, else ~/Library/Caches/vigily on macOS and
+        /// ~/.cache/vigily elsewhere).
         #[arg(long, env = "VIGILY_TOKEN_FILE")]
         token_file: Option<std::path::PathBuf>,
         /// Check no tokens at all. Anyone who can reach the port can read runs, change them and
@@ -170,7 +148,7 @@ enum ScheduleAction {
 }
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> Result<ExitCode> {
     let cli = Cli::parse();
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -203,85 +181,20 @@ async fn main() -> Result<()> {
             token_file,
             insecure_no_auth,
         } => {
-            let server = match mode {
-                Some(m) => *m == Mode::Server,
-                None => !host.is_loopback(),
-            };
-            let auth = if *insecure_no_auth {
-                AuthSetup::Off { server }
-            } else if server {
-                match vigily_server::auth::admin_token_from_env().map_err(|e| anyhow::anyhow!(e))? {
-                    Some(admin_token) => AuthSetup::Server { admin_token },
-                    None => anyhow::bail!(
-                        "server mode needs an admin token: set VIGILY_ADMIN_TOKEN (or VIGILY_ADMIN_TOKEN_FILE) \
-                         to a long random value, such as the output of `openssl rand -hex 32`. \
-                         To serve without any sign-in behind your own access control, pass --insecure-no-auth"
-                    ),
-                }
-            } else {
-                AuthSetup::Local {
-                    token_file: match token_file {
-                        Some(f) => f.clone(),
-                        None => default_token_file(&cli.repo)?,
-                    },
-                }
-            };
-            let config_path = config.clone().or_else(|| {
-                let p = std::path::PathBuf::from("vigily.toml");
-                p.exists().then_some(p)
+            let mut opts = vigily_server::engine::Options::new(&cli.repo);
+            opts.host = *host;
+            opts.port = *port;
+            opts.optimize = !no_optimize;
+            opts.optimize_every = *optimize_every;
+            opts.optimize_at_start = *optimize_at_start;
+            opts.config = config.clone();
+            opts.mode = mode.map(|m| match m {
+                Mode::Local => vigily_server::engine::Mode::Local,
+                Mode::Server => vigily_server::engine::Mode::Server,
             });
-            let config = match &config_path {
-                Some(p) => {
-                    vigily_server::config::Config::load(p).map_err(|e| anyhow::anyhow!(e))?
-                }
-                None => vigily_server::config::Config::default(),
-            };
-            let store = open().await?;
-            let records = vigily_core::open_records(&cli.repo)
-                .await
-                .with_context(|| format!("could not open the records of {}", cli.repo))?;
-            if let Some(p) = &config_path {
-                eprintln!(
-                    "configuration {}: {} {}",
-                    p.display(),
-                    config.schedule.len(),
-                    if config.schedule.len() == 1 {
-                        "schedule"
-                    } else {
-                        "schedules"
-                    }
-                );
-            }
-            let state = AppState::with(store, records, config);
-            let opts = ServeOptions {
-                addr: SocketAddr::new(*host, *port),
-                local_only: host.is_loopback(),
-                optimize: !no_optimize,
-                optimize_every: *optimize_every,
-                optimize_at_start: *optimize_at_start,
-                auth: auth.clone(),
-            };
-            let repo = cli.repo.clone();
-            eprintln!("vigily {} reading {repo}", env!("CARGO_PKG_VERSION"));
-            if let AuthSetup::Off { .. } = auth {
-                eprintln!(
-                    "warning: serving without sign-in (--insecure-no-auth): anyone who can reach this port can \
-                     read and change runs and start schedules. Put vigily behind your own access control."
-                );
-            }
-            if !vigily_ui::is_built() {
-                eprintln!("warning: built without the web app; only the API is served");
-            }
-            serve(state, opts, |ready| match (&ready.sign_in_url, &auth) {
-                (Some(link), _) => eprintln!("Open {link} (Ctrl-C to stop)"),
-                (None, AuthSetup::Server { .. }) => eprintln!(
-                    "Serving {} in server mode: sign in with the admin token or an access token (Ctrl-C to stop)",
-                    ready.url
-                ),
-                (None, _) => eprintln!("Open {} (Ctrl-C to stop)", ready.url),
-            })
-            .await
-            .with_context(|| format!("could not listen on {host}:{port}"))?;
+            opts.token_file = token_file.clone();
+            opts.insecure_no_auth = *insecure_no_auth;
+            return vigily_server::engine::run(opts).await;
         }
         Command::Traces {
             action: TracesAction::Delete { ids, erase, force },
@@ -437,7 +350,7 @@ async fn main() -> Result<()> {
             eprintln!("Optimized {}", cli.repo);
         }
     }
-    Ok(())
+    Ok(ExitCode::SUCCESS)
 }
 
 fn clip(s: &str, n: usize) -> String {
