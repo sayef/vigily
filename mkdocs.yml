@@ -100,6 +100,8 @@ nav:
       - LLM tracing: guides/tracing.md
       - Self-hosting and storage: guides/storage.md
       - Running a team server: guides/team-server.md
+      - HTTP API: guides/http-api.md
+      - Upgrading to 0.1.0-beta.3: guides/upgrading-to-beta3.md
       - The audit trail: guides/audit-trail.md
   - Design:
       - Brand: design/brand.md
