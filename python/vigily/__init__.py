@@ -62,11 +62,24 @@ __all__ = [
 ]
 
 
+def _pep440(v: str) -> str:
+    """The PEP 440 form of a Cargo pre-release version: ``0.1.0-beta.3`` is ``0.1.0b3``.
+
+    Built wheels already carry the normalised form; an editable install reports the version as
+    written in Cargo.toml."""
+    import re
+
+    m = re.fullmatch(r"(\d+\.\d+\.\d+)-(alpha|beta|rc)\.(\d+)", v)
+    if m is None:
+        return v
+    return m[1] + {"alpha": "a", "beta": "b", "rc": "rc"}[m[2]] + m[3]
+
+
 def _version() -> str:
     try:
         from importlib.metadata import PackageNotFoundError, version
 
-        return version("vigily")
+        return _pep440(version("vigily"))
     except (ImportError, PackageNotFoundError):  # pragma: no cover - running from a source tree
         return "0.0.0+unknown"
 

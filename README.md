@@ -7,7 +7,7 @@
 
 <p align="center">
   <b>An experiment tracker that keeps watch.</b><br>
-  Training runs, evaluations, scheduled evals and drift detection in one self-hosted binary.
+  Training runs, evaluations, scheduled evals and drift detection in one self-hosted engine.
 </p>
 
 <p align="center">
@@ -32,11 +32,12 @@
 ## Why vigily
 
 Most teams stitch together a tracker for training runs (MLflow, W&B), a tool for LLM and model
-evaluations (Langfuse) and a monitor for drift (Evidently). vigily is one binary that does the three
+evaluations (Langfuse) and a monitor for drift (Evidently). vigily is one engine that does the three
 jobs together, on storage you already have:
 
-- **One binary, no services.** `vigily up` serves the web app, a JSON API, the scheduler and the drift
-  monitor. No database server, no queue, no Node at runtime.
+- **One engine, no services.** `vigily-engine` (or `vigily up`) serves the web app, an HTTP API, the
+  scheduler and the drift monitor, and is the only process that writes storage. No database
+  server, no queue, no Node at runtime; the Python SDK is a 60 kB pure-Python package.
 - **Evaluations that keep running.** Versioned, content-addressed datasets; `evaluate()` with built-in
   and custom evaluators; schedules from a config file run them nightly in your time zone.
 - **Drift you can trust.** Paired tests on matched items with effect sizes and the items that
@@ -52,11 +53,36 @@ jobs together, on storage you already have:
 
 ## Quickstart
 
-### Install the binary
+### Install with pip
 
-Each GitHub release carries prebuilt `vigily` binaries for Linux (x86_64 and arm64, glibc 2.31 or
-newer) and macOS (Apple silicon and Intel). The installer picks the right one, checks its SHA-256
-against the release's checksum file and puts it in `~/.local/bin`, without sudo:
+Releases publish two packages to PyPI: `vigily`, the Python SDK (pure Python, no dependencies),
+and `vigily-engine`, the engine that stores runs and serves the web app, as a platform wheel for
+Linux and macOS. `vigily[local]` installs both:
+
+```bash
+pip install 'vigily[local]'   # the SDK and the engine for this machine
+vigily-engine                 # serves ./.vigily; open the link it prints (Ctrl-C to stop)
+python train.py               # in another shell: logs to that engine
+```
+
+Without a running engine, the SDK starts one in the background for the repository (`.vigily`, or
+`VIGILY_REPO`), which stops after 30 idle minutes. To log to an engine elsewhere, such as a
+[team server](docs/guides/team-server.md), install only the SDK and point it there with a token
+that has the `read` and `ingest` scopes:
+
+```bash
+pip install vigily
+VIGILY_URL=https://vigily.example.com VIGILY_TOKEN=vgy_... python train.py
+```
+
+Until 0.1.0 every release is a beta; pip installs the newest one when no stable release exists.
+
+### Install the command line
+
+Each GitHub release also carries prebuilt binaries for Linux (x86_64 and arm64, glibc 2.31 or
+newer) and macOS (Apple silicon and Intel): `vigily`, the command line, and `vigily-engine`. The
+installer picks the right archive, checks its SHA-256 against the release's checksum file and puts
+both in `~/.local/bin`, without sudo:
 
 ```bash
 curl -LsSf https://raw.githubusercontent.com/sayef/vigily/main/scripts/install.sh | sh
@@ -69,22 +95,24 @@ curl -LsSfO https://raw.githubusercontent.com/sayef/vigily/main/scripts/install.
 sh install.sh
 ```
 
-`VIGILY_VERSION=v0.1.0-beta.1` installs a given release and `VIGILY_INSTALL_DIR` changes the directory.
-Until 0.1.0 every release is a beta, published as a pre-release, and `latest` serves none of
-them: set `VIGILY_VERSION` (or `VIGILY_IMAGE` for Docker) to a beta tag such as `v0.1.0-beta.1`.
-The binary serves the web app and API (`vigily up`); the Python SDK is built from the repository
-until it is on PyPI.
+`VIGILY_VERSION=v0.1.0-beta.3` installs a given release and `VIGILY_INSTALL_DIR` changes the
+directory. Releases are published as pre-releases, which `latest` does not serve: set
+`VIGILY_VERSION` (or `VIGILY_IMAGE` for Docker) to a beta tag.
+
+`vigily up` runs the engine in the foreground and prints a link that signs the browser in;
+`vigily open` opens the web app of an engine that is already running, `vigily runs` lists runs,
+and `vigily tokens create` makes tokens for scripts and people on a shared engine (see the
+[command line guide](docs/guides/cli.md)).
 
 ### Build from source
 
-vigily is not on PyPI or crates.io yet. Build it with Rust, Node 24, [uv](https://docs.astral.sh/uv/)
-and `protoc`:
+Build with Rust, Node 24, [uv](https://docs.astral.sh/uv/) and `protoc`:
 
 ```bash
 git clone https://github.com/sayef/vigily && cd vigily
-(cd crates/vigily-ui && npm ci && npm run build)      # the binary embeds the web app
+(cd crates/vigily-ui && npm ci && npm run build)      # the engine embeds the web app
 cargo build --release -p vigily-cli -p vigily-server   # vigily and vigily-engine
-uv sync                                               # the Python SDK, pure Python
+uv sync                                               # the Python SDK, editable
 export PATH="$PWD/target/release:$PATH"               # the SDK starts vigily-engine from PATH
 
 uv run --no-sync python examples/demo.py              # synthetic training runs

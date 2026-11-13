@@ -75,5 +75,5 @@ Scheduled commands are code execution on the server, so vigily keeps the rules s
   SIGTERM, then SIGKILL two seconds later. A process that both starts a new session and clears its
   environment can escape this; containing that needs cgroups (a container or a systemd unit with
   `KillMode=control-group`), which vigily does not manage.
-- **Output is data.** Captured output is shown in the web app to anyone who can reach the server.
+- **Output is data.** Captured output is shown in the web app to anyone with a `read` token.
   Do not print personal data or secrets from evaluation scripts.

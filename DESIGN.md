@@ -11,7 +11,7 @@ the shorter tour of the code; [brand/DESIGN.md](brand/DESIGN.md) and
 Goals:
 
 - The everyday experiment-tracking workflow (runs, hyperparameters, metrics with contexts, a runs
-  table, a metric explorer, run pages) with few moving parts: one binary, one storage library, no
+  table, a metric explorer, run pages) with few moving parts: one engine, one storage library, no
   database server, no Node at runtime.
 - Fast with thousands of runs and series of 100 000 points or more.
 - A UI for long sessions: dense, keyboard-first, legible numbers, light and dark.
