@@ -130,7 +130,7 @@ become `latest`: the release, the `X.Y` image tag and the `latest` image tag are
 
 **PyPI.** Once the binaries and the Python packages built, the Release workflow uploads two projects
 to PyPI, pre-releases included (`v0.1.0-beta.1` becomes `0.1.0b1`, which PyPI marks as a
-pre-release and pip installs only with `--pre` or an exact version):
+pre-release; pip installs it with `--pre`, an exact version, or while no stable release exists):
 
 - `vigily` (the `pypi` job): the SDK's pure-Python wheel and its sdist.
 - `vigily-engine` (the `pypi-engine` job): the engine's platform wheels, built by maturin from
@@ -142,23 +142,26 @@ Both use trusted publishing, with no token. PyPI needs one trusted publisher per
 owner `sayef`, repository `vigily` and workflow `release.yml`: project `vigily` with environment
 `pypi`, and project `vigily-engine` with environment `pypi-engine` (PyPI refuses two pending
 publishers with the same repository, workflow and environment). Renaming the workflow file or an
-environment breaks the uploads until the publishers are updated to match. A pull request that changes `release.yml`, `.github/scripts/install-protoc.sh`
-or `crates/vigily-server/pyproject.toml` builds the engine wheels (and reports their sizes) without
-publishing anything.
+environment breaks the uploads until the publishers are updated to match. A pull request that
+changes `release.yml`, `.github/scripts/install-protoc.sh` or `crates/vigily-server/pyproject.toml`
+builds the engine wheels (and reports their sizes) without publishing anything.
 
-**crates.io.** Nothing is published there yet: kv0 is not on crates.io. Once `kv0 0.1.0-beta.1` is:
+**crates.io.** vigily is not published there yet. kv0 0.1.0-beta.1 is on crates.io, but vigily
+needs `Run::track_many`, which is on kv0 `main` and in no kv0 release yet. Once a kv0 release has
+it:
 
 1. In `release-plz.toml`, set `publish = true` and remove `git_only`. Every crate is published.
-2. Keep the kv0 requirement in `Cargo.toml` at the exact pre-release version (`0.1.0-beta.1`);
-   publishing ignores the git source.
+2. Set the kv0 requirement in `Cargo.toml` to that exact pre-release version (such as
+   `0.1.0-beta.2`); publishing ignores the git source.
 3. The `CARGO_REGISTRY_TOKEN` repository secret already exists. Pass it to the `release` step in
    `release-plz.yml` (`CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}`).
 
 The first versions are betas toward 0.1.0. The version is `version` in `[workspace.package]`; the
 wheels carry its PEP 440 form (`0.1.0-beta.1` is `0.1.0b1`).
 
-- **The first beta.** There is no tag yet, so the first release pull request releases the current
-  version, `0.1.0-beta.1`, as it is.
+- **The first beta.** There is no tag yet, so the first release pull request releases the version
+  in `Cargo.toml` as it is (`0.1.0-beta.1` today). To release it as another version, such as
+  `0.1.0-beta.3`, set that version in the release pull request (see 0.1.0 below).
 - **The next beta.** From a pre-release, release-plz bumps the last number (`0.1.0-beta.1` to
   `0.1.0-beta.2`); merging the release pull request cuts it.
 - **0.1.0.** release-plz never leaves a pre-release on its own, so I set the version explicitly:
