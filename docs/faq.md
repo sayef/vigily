@@ -2,7 +2,7 @@
 
 ## How is vigily different from MLflow, W&B, Langfuse or Evidently?
 
-It covers ground those tools split between them, in one self-hosted binary:
+It covers ground those tools split between them, in one self-hosted engine:
 
 - **Training runs** like an experiment tracker (MLflow, W&B): parameters, curves, a fast runs table.
 - **Evaluations** on versioned datasets with per-item results, like LLM evaluation tools (Langfuse).
@@ -15,7 +15,7 @@ It does not do artifact storage, prompt management, or a hosted service.
 ## Does any data leave my infrastructure?
 
 No. vigily writes only to the repository you choose, has no telemetry, and never calls a model.
-Traces travel from your process to your own `vigily up` and nowhere else.
+Traces travel from your process to your own engine and nowhere else.
 Evaluators that need a model call your own client from your own process.
 
 ## Do I need a database or a message queue?
@@ -24,7 +24,10 @@ No. Storage is Lance tables through kv0, on local disk or object storage.
 
 ## Can several training jobs write at once?
 
-Yes, to the same directory or bucket. See [many writers, one reader](guides/storage.md#many-writers-one-reader).
+Yes. Jobs on one machine log to the repository's engine, and jobs on other machines to a shared
+engine at `VIGILY_URL`; the engine is the only process that writes storage. See
+[Running a team server](guides/team-server.md) and
+[one engine, many jobs](guides/storage.md#one-engine-many-jobs).
 
 ## Is there sign-in or access control?
 
@@ -36,8 +39,10 @@ there yet.
 
 ## Can the web app run commands?
 
-No. Schedules come only from `vigily.toml` on the server. The app and the API can read schedules and
-their output but cannot create, change or start them.
+No. Schedules come only from `vigily.toml` on the server. The app and the API can read schedules
+and their output, and an admin token can start a configured schedule now
+(`POST /api/v1/schedules/{name}/run`, `vigily schedules run NAME`), but nothing can create or change
+a schedule's command.
 
 ## How many runs does it handle?
 

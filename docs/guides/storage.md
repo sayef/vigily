@@ -25,12 +25,18 @@ Credentials come from the environment, the way each cloud's tools expect them (f
 S3-compatible server). Prefer short-lived credentials such as SSO or workload identity over
 long-lived keys, and keep the bucket in the region where the data may live.
 
-## Many writers, one reader
+## One engine, many jobs
 
-Training jobs on different machines can write to the same repository at once: each run is its own
-set of rows, and record writes are appends. One `vigily up` serves it and picks up new runs as they
-appear. kv0 compacts the small files each finished run adds, and the server optimizes storage every
+One engine (`vigily-engine`) owns a repository and is the only process that writes it. Training
+jobs log to it over HTTP: on the same machine through the repository's local engine, which the SDK
+finds or starts, and from other machines through a shared engine at `VIGILY_URL`
+([Running a team server](team-server.md)). The engine writes each batch of points with one storage
+append and commits about once a second, so new points show up in the web app within a second or
+two. kv0 compacts the small files each finished run adds, and the engine optimizes storage every
 15 minutes; run `vigily optimize` by hand after a large backfill.
+
+An SDK from before 0.1.0-beta.3 writes the repository directly; it can still do so next to a
+running engine, which picks up its runs on its next refresh, but this is deprecated.
 
 ## Serving to a team
 
