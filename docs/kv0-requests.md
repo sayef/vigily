@@ -199,7 +199,7 @@ query, and a resent span simply supersedes its own row.
 timestamps: Option<&[i64]>)`: the points of one series in columns, written with one log append and
 one buffer lock, the series resolved once.
 
-**Why.** From beta.3 clients send points to the engine in columnar batches (`POST /api/v1/ingest`),
+**Why.** Clients send points to the engine in columnar batches (`POST /api/v1/ingest`),
 and the engine is the only writer. `RunWriter::track_batch` hands each batch's columns to storage;
 today it loops over `track`, which hashes the series, takes the step map and the buffer locks and
 appends to the log once per point. For a million points a second across all runs the per-point

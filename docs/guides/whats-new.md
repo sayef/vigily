@@ -1,6 +1,6 @@
-# Upgrading to 0.1.0-beta.3
+# What's new in 0.1.0-beta.1
 
-In 0.1.0-beta.3 one process, the engine (`vigily-engine`), owns a repository's storage. The web
+In 0.1.0-beta.1 one process, the engine (`vigily-engine`), owns a repository's storage. The web
 app, the `vigily` command and the Python SDK are its clients and talk to it over HTTP. Before, the
 SDK wrote to storage inside the training process, and `vigily up` served the same files. This page
 lists what changes for each kind of user. Repositories open unchanged: there is no storage format
@@ -99,6 +99,6 @@ Every request now needs a token (except health, info and `auth/me`).
 
 ## Older SDKs next to an engine
 
-An SDK from before 0.1.0-beta.3 still writes to storage directly. It can keep doing so next to a
+An SDK from an earlier development build still writes to storage directly. It can keep doing so next to a
 running engine, which picks up its runs on the next refresh, but this is deprecated: upgrade the
 SDK so that the engine is the only writer.

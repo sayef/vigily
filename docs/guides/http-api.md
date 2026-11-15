@@ -135,10 +135,10 @@ sent twice replaces points instead of adding them. A write to a deleted run is a
 
 ## Deprecated `/api` paths
 
-The routes of releases before 0.1.0-beta.3 (`/api/meta`, `/api/runs`, `/api/chart`, ...) still
+The routes of earlier development builds (`/api/meta`, `/api/runs`, `/api/chart`, ...) still
 answer as aliases of their `/api/v1` successors, with the same scopes. Their answers carry
 `Deprecation: true` and a `Link` header naming the successor, and their errors keep the old flat
-`{"error": "..."}` form. They will be removed before 0.1.0; routes added in 0.1.0-beta.3 have no
+`{"error": "..."}` form. They will be removed before 0.1.0; routes added with `/api/v1` have no
 alias. `/v1/traces` is OpenTelemetry's own path and stays.
 
 ## Example

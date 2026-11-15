@@ -27,7 +27,7 @@ vigily-ui = { path = "crates/vigily-ui", version = "0.1.0-beta.1" }
 # checkout instead, see "Storage dependency" in CONTRIBUTING.md.
 # `version` is what crates.io uses once kv0 is published; until then Cargo builds from git. A
 # pre-release needs its exact version here: "0.1" does not match 0.1.0-beta.1.
-kv0 = { git = "https://github.com/sayef/kv0", branch = "main", version = "0.1.0-beta.1", default-features = false }
+kv0 = { git = "https://github.com/sayef/kv0", branch = "main", version = "0.1.0-beta.2", default-features = false }
 # Only in tests, to write a shared records table the way earlier builds did; the same versions
 # kv0 uses, so nothing extra is compiled.
 lance = { version = "14.0.2", default-features = false }
