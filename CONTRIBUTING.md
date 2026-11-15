@@ -25,7 +25,7 @@ For UI work, `npm run dev` in `crates/vigily-ui` serves the app with hot reload 
 vigily depends on kv0 by git, on its `main` branch:
 
 ```toml
-kv0 = { git = "https://github.com/sayef/kv0", branch = "main", version = "0.1.0-beta.1", default-features = false }
+kv0 = { git = "https://github.com/sayef/kv0", branch = "main", version = "0.1.0-beta.2", default-features = false }
 ```
 
 Cargo builds from git; the `version` is what crates.io will use once kv0 is published, and it keeps
@@ -146,9 +146,8 @@ environment breaks the uploads until the publishers are updated to match. A pull
 changes `release.yml`, `.github/scripts/install-protoc.sh` or `crates/vigily-server/pyproject.toml`
 builds the engine wheels (and reports their sizes) without publishing anything.
 
-**crates.io.** vigily is not published there yet. kv0 0.1.0-beta.1 is on crates.io, but vigily
-needs `Run::track_many`, which is on kv0 `main` and in no kv0 release yet. Once a kv0 release has
-it:
+**crates.io.** vigily is not published there yet. kv0 0.1.0-beta.2, which has `Run::track_many`,
+is on crates.io. The remaining work is packaging the embedded web app into the crates. Then:
 
 1. In `release-plz.toml`, set `publish = true` and remove `git_only`. Every crate is published.
 2. Set the kv0 requirement in `Cargo.toml` to that exact pre-release version (such as
