@@ -97,7 +97,7 @@ pub struct LegacyErrorBody {
 /// `GET /api/v1/info`: what this engine is and what it can do.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Info {
-    /// The engine's version (`0.1.0-beta.3`).
+    /// The engine's version (`0.1.0-beta.1`).
     pub version: String,
     /// [`API_VERSION`].
     pub api_version: String,

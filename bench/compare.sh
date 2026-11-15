@@ -3,7 +3,7 @@
 #   bench/compare.sh [base-ref]        (default origin/main; ARGS="--procs 8 --runs 4 --points 100000")
 #
 # The baseline is vigily-engine built from base-ref in a temporary worktree (cached in
-# target/bench-base), or BASE_ENGINE when it names a binary. Before 0.1.0-beta.3 the SDK wrote
+# target/bench-base), or BASE_ENGINE when it names a binary. In earlier development builds the SDK wrote
 # to storage in-process, but no release published that SDK as a downloadable wheel, so there is
 # no embedded baseline to fetch: both sides use the same pure SDK from this checkout and only the
 # engine differs (for example before and after kv0's track_many).

@@ -43,11 +43,11 @@ sh install.sh
 
 | Variable | Meaning |
 |---|---|
-| `VIGILY_VERSION` | The release to install, such as `v0.1.0-beta.3`; default the latest |
+| `VIGILY_VERSION` | The release to install, such as `v0.1.0-beta.1`; default the latest |
 | `VIGILY_INSTALL_DIR` | Where to put the binaries; default `~/.local/bin` |
 
 Until 0.1.0 every release is a beta, published as a pre-release, and `latest` serves none of
-them: set `VIGILY_VERSION` (or `VIGILY_IMAGE` for Docker) to a beta tag such as `v0.1.0-beta.3`.
+them: set `VIGILY_VERSION` (or `VIGILY_IMAGE` for Docker) to a beta tag such as `v0.1.0-beta.1`.
 
 On other systems (musl-based Linux such as Alpine, FreeBSD, Windows), build from source.
 
@@ -89,7 +89,7 @@ needs an admin token. From a checkout of this repository (for `compose.yaml`):
 ```bash
 export VIGILY_ADMIN_TOKEN=$(openssl rand -hex 32)     # keep it: you sign in with it
 docker compose up -d                                   # the latest release
-VIGILY_IMAGE=ghcr.io/sayef/vigily:v0.1.0-beta.3 docker compose up -d   # a given one
+VIGILY_IMAGE=ghcr.io/sayef/vigily:v0.1.0-beta.1 docker compose up -d   # a given one
 ```
 
 Or without Compose:

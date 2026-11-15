@@ -146,7 +146,7 @@ Pull the new image and recreate the container; the repository format does not ch
 releases unless the [changelog](../changelog.md) says so:
 
 ```bash
-VIGILY_IMAGE=ghcr.io/sayef/vigily:v0.1.0-beta.3 docker compose up -d --wait
+VIGILY_IMAGE=ghcr.io/sayef/vigily:v0.1.0-beta.1 docker compose up -d --wait
 ```
 
 Keep the SDK and CLI on the same minor version as the engine; `GET /api/v1/info` reports the

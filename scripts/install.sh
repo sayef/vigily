@@ -87,7 +87,7 @@ main() {
   tar -C "$tmp" -xzf "$tmp/$asset" || fail "could not unpack $asset"
   [ -f "$tmp/vigily" ] || fail "$asset does not contain a vigily binary"
   mkdir -p "$install_dir" || fail "could not create $install_dir"
-  # The command line and the engine it starts (releases before 0.1.0-beta.3 have only vigily).
+  # The command line and the engine it starts (older archives have only vigily).
   for bin in vigily vigily-engine; do
     [ -f "$tmp/$bin" ] || continue
     # Move a new file into place rather than overwriting: macOS kills a binary rewritten in place.

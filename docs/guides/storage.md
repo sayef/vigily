@@ -35,7 +35,7 @@ append and commits about once a second, so new points show up in the web app wit
 two. kv0 compacts the small files each finished run adds, and the engine optimizes storage every
 15 minutes; run `vigily optimize` by hand after a large backfill.
 
-An SDK from before 0.1.0-beta.3 writes the repository directly; it can still do so next to a
+An SDK from an earlier development build writes the repository directly; it can still do so next to a
 running engine, which picks up its runs on its next refresh, but this is deprecated.
 
 ## Serving to a team

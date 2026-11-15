@@ -95,7 +95,7 @@ curl -LsSfO https://raw.githubusercontent.com/sayef/vigily/main/scripts/install.
 sh install.sh
 ```
 
-`VIGILY_VERSION=v0.1.0-beta.3` installs a given release and `VIGILY_INSTALL_DIR` changes the
+`VIGILY_VERSION=v0.1.0-beta.1` installs a given release and `VIGILY_INSTALL_DIR` changes the
 directory. Releases are published as pre-releases, which `latest` does not serve: set
 `VIGILY_VERSION` (or `VIGILY_IMAGE` for Docker) to a beta tag.
 

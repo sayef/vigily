@@ -41,7 +41,7 @@ vigily-engine = { path = "crates/vigily-server" }
 [dependency-groups]
 dev = ["pytest>=8", "ruff>=0.6"]
 
-# The version is the workspace's (Cargo.toml): 0.1.0-beta.3 there is 0.1.0b3 here.
+# The version is the workspace's (Cargo.toml): 0.1.0-beta.1 there is 0.1.0b1 here.
 [tool.hatch.version]
 path = "Cargo.toml"
 pattern = '(?m)^\[workspace\.package\]\s*\nversion = "(?P<version>[^"]+)"'

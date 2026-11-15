@@ -161,7 +161,7 @@ wheels carry its PEP 440 form (`0.1.0-beta.1` is `0.1.0b1`).
 
 - **The first beta.** There is no tag yet, so the first release pull request releases the version
   in `Cargo.toml` as it is (`0.1.0-beta.1` today). To release it as another version, such as
-  `0.1.0-beta.3`, set that version in the release pull request (see 0.1.0 below).
+  a later beta, set that version in the release pull request (see 0.1.0 below).
 - **The next beta.** From a pre-release, release-plz bumps the last number (`0.1.0-beta.1` to
   `0.1.0-beta.2`); merging the release pull request cuts it.
 - **0.1.0.** release-plz never leaves a pre-release on its own, so I set the version explicitly:

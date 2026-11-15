@@ -9,7 +9,7 @@ All notable changes to vigily are documented here. The format follows
 The first published release, as betas (0.1.0-beta.N) before 0.1.0. Earlier builds were never
 released; Changed, Deprecated and Removed describe what differs from them, mainly that the Python
 SDK no longer writes storage in the training process but logs to the engine over HTTP (see
-docs/guides/upgrading-to-beta3.md).
+docs/guides/whats-new.md).
 
 ### Added
 
@@ -255,5 +255,5 @@ docs/guides/upgrading-to-beta3.md).
   (release-plz tags the pull request's own commit, the merge's second parent).
 - A schedule run that had just finished could be read without its captured output: the output
   is now stored before the run's final status.
-- `vigily.__version__` reports the PEP 440 form (`0.1.0b3`) in editable installs too, as built
+- `vigily.__version__` reports the PEP 440 form (`0.1.0b1`) in editable installs too, as built
   wheels do.
