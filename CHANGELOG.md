@@ -6,6 +6,8 @@ All notable changes to vigily are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.0-beta.1](https://github.com/sayef/vigily/releases/tag/v0.1.0-beta.1) - 2026-11-15
+
 The first published release, as betas (0.1.0-beta.N) before 0.1.0. Earlier builds were never
 released; Changed, Deprecated and Removed describe what differs from them, mainly that the Python
 SDK no longer writes storage in the training process but logs to the engine over HTTP (see
