@@ -229,6 +229,9 @@ pub struct Alert {
     pub dedupe: String,
     /// Whether the webhook accepted it, when one is configured.
     pub delivered: Option<bool>,
+    /// How its deliveries to notification channels stand (`GET alerts` only; never stored).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deliveries: Option<crate::notifications::DeliverySummary>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]

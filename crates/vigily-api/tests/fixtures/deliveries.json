@@ -1,0 +1,39 @@
+{
+  "deliveries": [
+    {
+      "alert_id": "00001794498300556243-381f85",
+      "channel_id": "3f9c2a1b7d4e6f80",
+      "channel_name": "ml-alerts",
+      "kind": "slack",
+      "status": "sent",
+      "attempts": 1,
+      "status_code": 200,
+      "created_at": 1794498300600000,
+      "updated_at": 1794498300900000
+    },
+    {
+      "alert_id": "00001794498300556243-381f85",
+      "channel_id": "a0b1c2d3e4f50617",
+      "channel_name": "on-call mail",
+      "kind": "email",
+      "status": "pending",
+      "attempts": 2,
+      "error": "SMTP server smtp.example.com:587: Connection error: connection refused",
+      "created_at": 1794498300600000,
+      "updated_at": 1794498345000000,
+      "next_attempt_at": 1794498405000000
+    },
+    {
+      "alert_id": "00001794498300556243-381f85",
+      "channel_id": "c4d5e6f708192a3b",
+      "channel_name": "incident hook",
+      "kind": "webhook",
+      "status": "failed",
+      "attempts": 1,
+      "status_code": 400,
+      "error": "https://hooks.example.com answered 400 Bad Request: unknown event",
+      "created_at": 1794498300600000,
+      "updated_at": 1794498300800000
+    }
+  ]
+}

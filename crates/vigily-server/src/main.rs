@@ -69,6 +69,10 @@ struct Args {
     /// run schedules: only behind your own access control.
     #[arg(long)]
     insecure_no_auth: bool,
+    /// The address people open the web app at (`https://vigily.example.com`), for links in
+    /// alert notifications. Defaults to the address the engine listens on.
+    #[arg(long, env = "VIGILY_PUBLIC_URL")]
+    public_url: Option<String>,
     /// Set by --detach on the process it starts.
     #[arg(long, hide = true)]
     auto_started: bool,
@@ -113,6 +117,7 @@ impl Args {
             auto_started: self.auto_started,
             token_file: self.token_file.clone(),
             insecure_no_auth: self.insecure_no_auth,
+            public_url: self.public_url.clone(),
         }
     }
 }

@@ -1,0 +1,6 @@
+{
+  "ok": false,
+  "status_code": 404,
+  "error": "https://hooks.slack.com answered 404 Not Found: no_service",
+  "duration_ms": 182
+}

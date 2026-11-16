@@ -25,10 +25,13 @@
 pub mod admin_api;
 pub mod audit;
 pub mod auth;
+pub mod channels;
 pub mod config;
+pub mod delivery;
 pub mod engine;
 pub mod evals_api;
 pub mod monitor;
+pub mod render;
 pub mod runs_api;
 pub mod scheduler;
 pub mod secrets;
@@ -98,6 +101,11 @@ pub struct AppState {
     pub auth: auth::Auth,
     /// The keys stored secrets are sealed with.
     pub secrets: secrets::Secrets,
+    /// The queue and rate limits of alert deliveries to notification channels.
+    pub notifier: delivery::Notifier,
+    /// The address people reach the web app at, for links in notifications; the engine's own
+    /// address when not given.
+    pub public_url: Option<String>,
     /// The engine's address once it listens (`http://127.0.0.1:7600`), for scheduled commands.
     pub url: parking_lot::RwLock<Option<String>>,
     /// Wakes the background catalog refresh early (after a write).
@@ -122,6 +130,10 @@ pub struct EngineOptions {
     pub auth: auth::AuthMode,
     /// The keys stored secrets are sealed with; none by default, so values cannot be stored.
     pub secrets: secrets::SecretKeys,
+    /// Retries and timeouts of alert deliveries.
+    pub delivery: delivery::DeliveryOptions,
+    /// The address people reach the web app at (`--public-url`), for links in notifications.
+    pub public_url: Option<String>,
 }
 
 impl AppState {
@@ -166,6 +178,8 @@ impl AppState {
             writes: writers::Writes::new(opts.limits),
             auth: auth::Auth::new(opts.auth),
             secrets: secrets::Secrets::new(opts.secrets),
+            notifier: delivery::Notifier::new(opts.delivery),
+            public_url: opts.public_url.map(|u| u.trim_end_matches('/').to_string()),
             url: parking_lot::RwLock::new(None),
             refresh_now: tokio::sync::Notify::new(),
             last_request: std::sync::atomic::AtomicI64::new(vigily_core::now_micros()),
@@ -351,6 +365,7 @@ fn v1_only(state: &Arc<AppState>) -> Scoped {
         .merge(traces_api::v1_routes())
         .merge(admin_api::routes())
         .merge(secrets::routes())
+        .merge(channels::routes())
         .merge(audit::routes())
 }
 
@@ -371,6 +386,7 @@ pub const CAPABILITIES: &[&str] = &[
     "auth",
     "secrets",
     "audit",
+    "notifications",
 ];
 
 async fn info(State(s): State<Arc<AppState>>) -> Json<Info> {
@@ -637,6 +653,7 @@ pub async fn serve(
     }
     scheduler::start(state.clone());
     monitor::start(state.clone());
+    delivery::start(state.clone());
     let bg = state.clone();
     background.push(tokio::spawn(async move {
         let mut last_commit = tokio::time::Instant::now();

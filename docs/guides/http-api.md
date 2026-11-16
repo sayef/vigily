@@ -127,6 +127,79 @@ sent twice replaces points instead of adding them. A write to a deleted run is a
 | `DELETE /api/v1/traces/{id}` | admin | deletes one trace |
 | `POST /api/v1/traces/delete` | admin | `{ids, erase?, force?}` → deletes or erases traces |
 
+## Notification channels
+
+| Method and path | Scope | Answer |
+|---|---|---|
+| `GET /api/v1/notifications/channels` | read | `{channels}`: each `{id, name, kind, enabled, default, settings, secrets, source, created_at, updated_at, changed_by?, last_delivery?}`, secrets as states only |
+| `POST /api/v1/notifications/channels` | admin | `{name, kind, enabled?, default?, settings?, secrets?}` → 201 with the channel |
+| `GET /api/v1/notifications/channels/{id}` | read | one channel |
+| `PATCH /api/v1/notifications/channels/{id}` | admin | `{name?, enabled?, default?, settings?, secrets?}` → the channel; `settings` replaces the settings, each field in `secrets` replaces that secret |
+| `DELETE /api/v1/notifications/channels/{id}` | admin | removes the channel and its stored secrets → `{deleted}` |
+| `POST /api/v1/notifications/channels/{id}/test` | admin | sends a test alert once → `{ok, status_code?, error?, duration_ms}` |
+| `GET /api/v1/alerts/{id}/deliveries` | read | `{deliveries}`: per channel `{status, attempts, status_code?, error?, next_attempt_at?, ...}` |
+
+`kind` is `slack`, `teams`, `discord` (incoming webhooks), `webhook` (any HTTP endpoint) or `email`
+(SMTP). Secret fields are `webhook_url` (Slack, Teams, Discord), `url` and the optional
+`signing_key` (webhook), and the optional `password` (e-mail). A request sets one as
+`{"value": "..."}` (stored encrypted; an empty value removes it) or `{"env": "NAME"}` (read from
+the engine's environment when it is used); answers show its [state](#secrets-and-the-audit-trail),
+never the value. E-mail settings are `host`, `port` (587, 465 or 25 by default), `security`
+(`starttls`, `tls` or `none`), `username`, `from` and `to` (a list); every kind takes `burst` and
+`per_minute` (5 and 20 by default), its rate limit.
+
+`GET /api/v1/alerts` adds `deliveries: {sent, failed, pending}` to each alert that was queued for
+a channel. A delivery is retried after no answer, a 5xx, 408 or 429 (five attempts over about eight
+minutes, with exponential backoff and jitter); any other answer fails it. Each alert goes to each
+channel once.
+
+### The webhook document
+
+A `webhook` channel posts this JSON document (`Content-Type: application/json`). Its `schema` is
+`vigily.alert/1`; fields are only ever added within it.
+
+```json
+{
+  "event": "vigily.alert",
+  "schema": "vigily.alert/1",
+  "test": false,
+  "alert": {
+    "id": "00001794498300556243-381f85",
+    "kind": "behaviour_drift",
+    "severity": "critical",
+    "title": "accuracy dropped on intent-clf-v2",
+    "detail": "accuracy is 0.810 against 0.900 on the same 200 items ...",
+    "suite": "916d93593f1a",
+    "run_id": "01a1d06ee5c1732fb3d654b9a0808e5b",
+    "schedule": "nightly-intents",
+    "created_at": 1794498300556243,
+    "time": "2026-11-12T15:45:00Z",
+    "dedupe": "behaviour/916d93593f1a/01a1d06ee5c1732fb3d654b9a0808e5b/accuracy"
+  },
+  "url": "https://vigily.example.com/drift/916d93593f1a"
+}
+```
+
+`kind` is `behaviour_drift`, `data_drift`, `schedule_failed`, or `test` for a test send; `severity`
+is `warning` or `critical`; `created_at` is in UTC microseconds and `time` is the same instant in
+RFC 3339; `url` opens the alert's page in the web app (`--public-url`, else the engine's own
+address). With a `signing_key`, each request carries `X-Vigily-Timestamp` (Unix seconds) and
+`X-Vigily-Signature: sha256=<hex>`, the HMAC-SHA256 of `<timestamp>.<body>` under the key. A
+receiver recomputes it over the raw body, compares in constant time and refuses timestamps more
+than a few minutes old:
+
+```python
+import hashlib
+import hmac
+import time
+
+
+def verify(key: bytes, headers, body: bytes) -> bool:
+    ts = headers["X-Vigily-Timestamp"]
+    want = "sha256=" + hmac.new(key, ts.encode() + b"." + body, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(want, headers["X-Vigily-Signature"]) and abs(time.time() - int(ts)) < 300
+```
+
 ## Secrets and the audit trail
 
 | Method and path | Scope | Answer |

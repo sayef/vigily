@@ -1083,7 +1083,12 @@ async fn data_drift(
 
 async fn alerts(State(s): State<Arc<AppState>>) -> ApiResult<Vec<Alert>> {
     s.records.refresh().await?;
-    Ok(Json(evals::alerts(&*s.records).await?))
+    let mut alerts = evals::alerts(&*s.records).await?;
+    let mut summaries = crate::delivery::summaries(&*s.records).await?;
+    for a in &mut alerts {
+        a.deliveries = summaries.remove(&a.id);
+    }
+    Ok(Json(alerts))
 }
 
 async fn update_alert(

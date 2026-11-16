@@ -894,6 +894,7 @@ mod tests {
             acknowledged_at: None,
             dedupe: d.into(),
             delivered: None,
+            deliveries: None,
         };
         assert!(raise_alert(&rs, mk("x")).await.unwrap().is_some());
         assert!(raise_alert(&rs, mk("x")).await.unwrap().is_none());
@@ -976,6 +977,7 @@ mod tests {
             acknowledged_at: None,
             dedupe: d.into(),
             delivered: None,
+            deliveries: None,
         }
     }
 
