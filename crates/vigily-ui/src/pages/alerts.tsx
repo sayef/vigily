@@ -1,14 +1,16 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Activity, BellOff, CalendarX, TriangleAlert } from "lucide-react";
+import { Activity, BellOff, CalendarX, ChevronDown, TriangleAlert } from "lucide-react";
+import { useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/evals";
+import { KindIcon, summaryText } from "@/components/notifications";
 import { ErrorState } from "@/components/states";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip } from "@/components/ui/tooltip";
-import { type Alert, evalApi } from "@/lib/api";
-import { ago, utc } from "@/lib/format";
+import { type Alert, type Delivery, evalApi } from "@/lib/api";
+import { ago, until, utc } from "@/lib/format";
 import { useTitle } from "@/lib/hooks";
 import { cn } from "@/lib/utils";
 
@@ -23,6 +25,7 @@ export function AlertsPage() {
   const [sp, setSp] = useSearchParams();
   const all = sp.get("show") === "all";
   const qc = useQueryClient();
+  const [shown, setShown] = useState<string | null>(null);
   const q = useQuery({ queryKey: ["alerts"], queryFn: ({ signal }) => evalApi.alerts(signal), refetchInterval: 30_000 });
   const ack = useMutation({
     mutationFn: ({ id, on }: { id: string; on: boolean }) => evalApi.ackAlert(id, on),
@@ -41,7 +44,17 @@ export function AlertsPage() {
   return (
     <div className="px-4 pb-16 pt-5 md:px-6">
       <PageHeader title="Alerts">
-        {q.data ? `${open} open of ${q.data.length}. vigily raises an alert once per drifted run and per failed scheduled run; a webhook, when configured, receives each one.` : " "}
+        {q.data ? (
+          <span>
+            {open} open of {q.data.length}. vigily raises an alert once per drifted run and per failed scheduled run, and sends it to the channels its{" "}
+            <Link to="/settings/notifications" className="inline-flex min-h-6 items-center underline underline-offset-4 hover:text-foreground">
+              routing rules
+            </Link>{" "}
+            pick.
+          </span>
+        ) : (
+          " "
+        )}
       </PageHeader>
       <div className="mt-4 grid w-fit grid-cols-2 rounded-md bg-muted p-0.5" role="radiogroup" aria-label="Which alerts">
         {[
@@ -77,7 +90,7 @@ export function AlertsPage() {
           return (
             <li key={a.id} className={cn("flex flex-wrap items-start gap-x-4 gap-y-2 border bg-card px-4 py-3", a.acknowledged_at && "opacity-70")}>
               <k.icon className={cn("mt-0.5 size-5 shrink-0", a.severity === "critical" ? "text-danger" : "text-warning")} aria-hidden />
-              <div className="min-w-0 flex-1">
+              <div className="min-w-0 flex-1 basis-60">
                 <p className="flex flex-wrap items-baseline gap-x-2">
                   <span className="font-semibold">{a.title}</span>
                   <span className="text-xs text-muted-foreground">
@@ -89,11 +102,25 @@ export function AlertsPage() {
                   <Tooltip content={utc(a.created_at)}>
                     <span>Raised {ago(a.created_at)}</span>
                   </Tooltip>
-                  {a.delivered !== null && <span>{a.delivered ? "Sent to the webhook" : "The webhook did not accept it"}</span>}
+                  {(a.experiment || a.suite_name) && <span>{[a.experiment, a.suite_name].filter(Boolean).join(", ")}</span>}
+                  {a.deliveries ? (
+                    <button
+                      type="button"
+                      aria-expanded={shown === a.id}
+                      aria-controls={`deliveries-${a.id}`}
+                      onClick={() => setShown(shown === a.id ? null : a.id)}
+                      className={cn("inline-flex min-h-6 items-center gap-1 underline-offset-4 hover:text-foreground hover:underline pointer-coarse:min-h-11", a.deliveries.failed > 0 && "text-danger")}
+                    >
+                      Delivery: {summaryText(a.deliveries)}
+                      <ChevronDown className={cn("size-3.5 transition-transform duration-[160ms]", shown === a.id && "rotate-180")} aria-hidden />
+                    </button>
+                  ) : (
+                    <span>Not sent to any channel</span>
+                  )}
                   {a.acknowledged_at && <span>Acknowledged {ago(a.acknowledged_at)}</span>}
                 </p>
               </div>
-              <div className="flex gap-2">
+              <div className="flex gap-2 max-sm:pl-9">
                 {link && (
                   <Button asChild size="sm" variant="outline">
                     <Link to={link}>{a.kind === "schedule_failed" ? "Open the schedule" : "Open the drift"}</Link>
@@ -103,10 +130,51 @@ export function AlertsPage() {
                   {a.acknowledged_at ? "Reopen" : "Acknowledge"}
                 </Button>
               </div>
+              {shown === a.id && <DeliveryLog id={a.id} />}
             </li>
           );
         })}
       </ul>
+    </div>
+  );
+}
+
+const STATUS: Record<Delivery["status"], string> = { sent: "Sent", failed: "Failed", pending: "Retrying" };
+
+/** Every delivery of one alert: channel, status, attempts, the last answer and the error. */
+function DeliveryLog({ id }: { id: string }) {
+  const q = useQuery({ queryKey: ["deliveries", id], queryFn: ({ signal }) => evalApi.deliveries(id, signal), refetchInterval: (x) => (x.state.data?.deliveries.some((d) => d.status === "pending") ? 5_000 : false) });
+  return (
+    <div id={`deliveries-${id}`} className="min-w-0 basis-full border-t pt-2 sm:pl-9">
+      {q.isError && <p className="text-sm text-danger">{(q.error as Error).message}</p>}
+      {!q.data && !q.isError && <Skeleton className="h-8" />}
+      {q.data && q.data.deliveries.length === 0 && <p className="text-sm text-muted-foreground">No deliveries recorded.</p>}
+      {q.data && q.data.deliveries.length > 0 && (
+        <ul aria-label="Deliveries of this alert" className="text-sm">
+          {q.data.deliveries.map((d) => (
+            <li key={d.channel_id} className="grid gap-x-4 gap-y-0.5 border-b py-1.5 last:border-b-0 sm:grid-cols-[minmax(0,14rem)_minmax(0,1fr)]">
+              <Link to={`/settings/notifications/channels/${encodeURIComponent(d.channel_id)}`} className="inline-flex min-h-6 min-w-0 items-center gap-1.5 self-start underline-offset-4 hover:underline">
+                <KindIcon kind={d.kind} />
+                <span className="truncate">{d.channel_name}</span>
+              </Link>
+              <span className="min-w-0 sm:pt-0.5">
+                <span className="flex flex-wrap items-baseline gap-x-2">
+                  <span className={cn("font-semibold", d.status === "failed" && "text-danger", d.status === "sent" && "text-brand", d.status === "pending" && "text-warning")}>{STATUS[d.status]}</span>
+                  {d.status_code !== undefined && <span className="font-mono text-[12.5px] nums">{d.status_code}</span>}
+                  <span className="text-faint nums">
+                    {d.attempts} {d.attempts === 1 ? "attempt" : "attempts"}, last{" "}
+                    <Tooltip content={utc(d.updated_at)}>
+                      <span>{ago(d.updated_at)}</span>
+                    </Tooltip>
+                    {d.status === "pending" && d.next_attempt_at && <>, next {until(d.next_attempt_at)}</>}
+                  </span>
+                </span>
+                {d.error && <span className="block max-w-prose break-words text-muted-foreground">{d.error}</span>}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
