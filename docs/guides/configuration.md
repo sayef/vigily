@@ -16,6 +16,7 @@ the server serves it. A `vigily.toml` adds schedules, an alert webhook and drift
 | `VIGILY_SECRET_KEY` | `vigily-engine`, Docker | The key stored secrets (webhook URLs, signing keys, SMTP passwords) are encrypted with (at least 16 characters); see [Secrets](#secrets) |
 | `VIGILY_SECRET_KEY_PREVIOUS` | `vigily-engine`, Docker | The key before the current one, while rotating; values stored under it are encrypted again with `VIGILY_SECRET_KEY` at start |
 | `VIGILY_SECRET_KEY_FILE`, `VIGILY_SECRET_KEY_PREVIOUS_FILE` | `vigily-engine`, Docker | Files holding those keys instead (Docker secrets) |
+| `VIGILY_PUBLIC_URL` | `vigily-engine` | The address people open the web app at (`--public-url`), for links in alert notifications; the engine's own address by default |
 | `VIGILY_TOKEN_FILE` | `vigily up`, `vigily-engine` | Where the local token is kept; default `engines/<key>.token` in the state directory |
 | `VIGILY_STATE_DIR` | `vigily up`, `vigily-engine` | vigily's state directory (engine addresses, local tokens, logs); default `~/Library/Caches/vigily` on macOS and `~/.cache/vigily` elsewhere |
 | `VIGILY_URL`, `VIGILY_TOKEN` | CLI, SDK, scheduled commands | An engine's address and the token to send; the CLI and the SDK then use that engine instead of the repository's local one. Set by the scheduler for its commands |

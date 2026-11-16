@@ -18,8 +18,23 @@ All notable changes to vigily are documented here. The format follows
 - Key rotation: with `VIGILY_SECRET_KEY_PREVIOUS`, values stored under the old key are encrypted
   again with the new one at start; values no key opens are named in a startup warning and reported
   as `undecryptable`.
-- An audit trail of configuration changes (`GET /api/v1/audit`, admin): who changed which secret,
-  never the value. `GET /api/v1/info` lists the `secrets` and `audit` capabilities.
+- Notification channels: Slack, Microsoft Teams and Discord incoming webhooks, generic webhooks
+  and e-mail over SMTP (STARTTLS, TLS or none, with authentication), several of each, managed at
+  `/api/v1/notifications/channels` with write-only secrets (`{"value"}` stored encrypted, or
+  `{"env": "NAME"}` read from the engine's environment). Each kind gets a readable message: title,
+  severity, what changed, the suite, run and schedule, the time in UTC and a link into the web app
+  (`--public-url` / `VIGILY_PUBLIC_URL`, else the engine's address).
+- Generic webhooks post a documented `vigily.alert/1` JSON document, signed with
+  `X-Vigily-Signature: sha256=<HMAC-SHA256 of timestamp.body>` and `X-Vigily-Timestamp` when the
+  channel has a signing key.
+- A delivery worker: each alert goes once to each enabled channel marked default, with retries
+  (exponential backoff and jitter), a rate limit per channel (`burst`, `per_minute`) and a delivery
+  log (`GET /api/v1/alerts/{id}/deliveries`; `GET /api/v1/alerts` adds a summary per alert).
+  Pending deliveries survive a restart. `POST /api/v1/notifications/channels/{id}/test` sends a
+  test alert and reports what happened.
+- An audit trail of configuration changes (`GET /api/v1/audit`, admin): who changed which secret
+  or channel, never the value. `GET /api/v1/info` lists the `secrets`, `audit` and `notifications`
+  capabilities.
 
 ## [0.1.0-beta.1](https://github.com/sayef/vigily/releases/tag/v0.1.0-beta.1) - 2026-11-15
 
