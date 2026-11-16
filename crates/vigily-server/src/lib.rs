@@ -23,6 +23,7 @@
 #![recursion_limit = "256"]
 
 pub mod admin_api;
+pub mod audit;
 pub mod auth;
 pub mod config;
 pub mod engine;
@@ -30,6 +31,7 @@ pub mod evals_api;
 pub mod monitor;
 pub mod runs_api;
 pub mod scheduler;
+pub mod secrets;
 pub mod traces_api;
 pub mod write_api;
 pub mod writers;
@@ -94,6 +96,8 @@ pub struct AppState {
     pub writes: writers::Writes,
     /// Tokens and the mode they are checked in.
     pub auth: auth::Auth,
+    /// The keys stored secrets are sealed with.
+    pub secrets: secrets::Secrets,
     /// The engine's address once it listens (`http://127.0.0.1:7600`), for scheduled commands.
     pub url: parking_lot::RwLock<Option<String>>,
     /// Wakes the background catalog refresh early (after a write).
@@ -116,6 +120,8 @@ pub struct EngineOptions {
     /// How requests are authenticated; no checks by default (tests, embedding). [`serve`] sets
     /// the mode from [`ServeOptions::auth`].
     pub auth: auth::AuthMode,
+    /// The keys stored secrets are sealed with; none by default, so values cannot be stored.
+    pub secrets: secrets::SecretKeys,
 }
 
 impl AppState {
@@ -159,6 +165,7 @@ impl AppState {
             traces_count: Mutex::new(None),
             writes: writers::Writes::new(opts.limits),
             auth: auth::Auth::new(opts.auth),
+            secrets: secrets::Secrets::new(opts.secrets),
             url: parking_lot::RwLock::new(None),
             refresh_now: tokio::sync::Notify::new(),
             last_request: std::sync::atomic::AtomicI64::new(vigily_core::now_micros()),
@@ -343,6 +350,8 @@ fn v1_only(state: &Arc<AppState>) -> Scoped {
         .merge(evals_api::v1_routes())
         .merge(traces_api::v1_routes())
         .merge(admin_api::routes())
+        .merge(secrets::routes())
+        .merge(audit::routes())
 }
 
 /// The route groups this engine serves (`GET /api/v1/info`).
@@ -360,6 +369,8 @@ pub const CAPABILITIES: &[&str] = &[
     "admin",
     "ingest",
     "auth",
+    "secrets",
+    "audit",
 ];
 
 async fn info(State(s): State<Arc<AppState>>) -> Json<Info> {
@@ -607,6 +618,7 @@ pub async fn serve(
     if let AuthSetup::Local { token_file } = &opts.auth {
         *state.local_token_file.write() = Some(token_file.clone());
     }
+    secrets::startup(&state).await;
     if opts.optimize_at_start {
         optimize(&state).await;
     }

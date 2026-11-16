@@ -13,6 +13,9 @@ the server serves it. A `vigily.toml` adds schedules, an alert webhook and drift
 | `VIGILY_LOG` | CLI | Log filter, for example `info` or `vigily_server=debug` |
 | `VIGILY_ADMIN_TOKEN` | `vigily-engine --mode server`, Docker | The admin token (at least 16 characters); required in server mode, never stored |
 | `VIGILY_ADMIN_TOKEN_FILE` | `vigily-engine --mode server`, Docker | A file holding the admin token, instead of `VIGILY_ADMIN_TOKEN` (Docker secrets) |
+| `VIGILY_SECRET_KEY` | `vigily-engine`, Docker | The key stored secrets (webhook URLs, signing keys, SMTP passwords) are encrypted with (at least 16 characters); see [Secrets](#secrets) |
+| `VIGILY_SECRET_KEY_PREVIOUS` | `vigily-engine`, Docker | The key before the current one, while rotating; values stored under it are encrypted again with `VIGILY_SECRET_KEY` at start |
+| `VIGILY_SECRET_KEY_FILE`, `VIGILY_SECRET_KEY_PREVIOUS_FILE` | `vigily-engine`, Docker | Files holding those keys instead (Docker secrets) |
 | `VIGILY_TOKEN_FILE` | `vigily up`, `vigily-engine` | Where the local token is kept; default `engines/<key>.token` in the state directory |
 | `VIGILY_STATE_DIR` | `vigily up`, `vigily-engine` | vigily's state directory (engine addresses, local tokens, logs); default `~/Library/Caches/vigily` on macOS and `~/.cache/vigily` elsewhere |
 | `VIGILY_URL`, `VIGILY_TOKEN` | CLI, SDK, scheduled commands | An engine's address and the token to send; the CLI and the SDK then use that engine instead of the repository's local one. Set by the scheduler for its commands |
@@ -31,6 +34,7 @@ these from your shell or a `.env` file:
 | `VIGILY_ADMIN_TOKEN` | Required: the admin token; `docker compose up` refuses to start without it |
 | `VIGILY_IMAGE` | The image, default `ghcr.io/sayef/vigily:latest`; `compose.dev.yaml` builds `vigily:local` |
 | `VIGILY_HOST_PORT` | The port published on `127.0.0.1`, default 7600 |
+| `VIGILY_SECRET_KEY`, `VIGILY_SECRET_KEY_PREVIOUS` | Optional: the key stored secrets are encrypted with, and the one before it while rotating ([Secrets](#secrets)) |
 | `VIGILY_LOG` | As above |
 
 To keep the repository on object storage, set `VIGILY_REPO` to an `s3://`, `gs://` or `az://` URI
@@ -89,6 +93,37 @@ them and `DELETE /api/v1/auth/tokens/<id>` revokes one. Labels record who entere
 Scheduled commands get `VIGILY_URL` and, when the engine checks tokens, a `VIGILY_TOKEN` with the
 `read` and `ingest` scopes that is held in memory, expires with the attempt and is revoked when the
 command exits.
+
+## Secrets
+
+Notification channels need secrets: webhook URLs, signing keys, SMTP passwords. vigily stores them
+encrypted in the repository, as records `secret/<name>`, and never returns a value: the API and the
+web app show only where a secret comes from (`stored`, `env:<NAME>` or `none`), its last four
+characters, who changed it and when.
+
+Each value is encrypted with XChaCha20-Poly1305 under a 256-bit key derived with BLAKE3 from
+`VIGILY_SECRET_KEY`, with a random nonce per value and the secret's name bound to it, so a value
+copied to another name does not decrypt.
+
+- **Local mode** without `VIGILY_SECRET_KEY`: the engine generates a key in
+  `engines/<key>.secret-key` in the state directory (0600), so storing secrets needs no setup.
+  When `VIGILY_SECRET_KEY` is set later, that file's key still opens what it encrypted.
+- **Server mode** needs `VIGILY_SECRET_KEY` (or `VIGILY_SECRET_KEY_FILE`) to store values; without
+  it, storing is refused with `409 secret_key_missing`, and channels can read secrets from the
+  engine's environment instead (`env:NAME`).
+
+```bash
+echo "VIGILY_SECRET_KEY=$(openssl rand -hex 32)" >> .env   # keep it with the admin token
+```
+
+**Rotating the key.** Start the engine with the new key in `VIGILY_SECRET_KEY` and the old one in
+`VIGILY_SECRET_KEY_PREVIOUS`. At start, every value the old key opens is encrypted again with the new
+one; after that start the old key can go. Values that neither key opens are named in a warning at
+start and shown as `undecryptable` until they are stored again.
+
+`GET /api/v1/secrets` shows the key's status and the stored secrets; `PUT /api/v1/secrets/<name>`
+with `{"value": "..."}` stores one, and an empty value removes it. Every change to a secret is in
+the audit trail (`GET /api/v1/audit`, admin) with who made it, never the value.
 
 ## vigily.toml
 

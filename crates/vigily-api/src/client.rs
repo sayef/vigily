@@ -29,6 +29,7 @@ use crate::runs::{
     PurgeRequest, PurgeSummary, ResumedRun, RunDetail, RunFields, RunParams, RunRow, RunSeries,
     RunSummary, RunsQuery, RunsResponse, SeriesPoints, Stored,
 };
+use crate::secrets::{AuditLog, AuditQuery, NamedSecret, SecretsStatus, SetSecret};
 use crate::traces::{
     DeleteTraces, IngestBody, TraceDeleted, TraceResponse, TracesDeleted, TracesQuery,
     TracesResponse, TracingPolicy,
@@ -683,6 +684,28 @@ impl Client {
             self.url(&format!("/auth/tokens/{}", seg(id))),
         ))
         .await
+    }
+
+    // -----------------------------------------------------------------------------------------
+    // Secrets and the audit trail
+
+    /// `GET secrets`: the encryption key's status and the stored secrets, never their values.
+    pub async fn secrets(&self) -> Result<SecretsStatus> {
+        self.get("/secrets").await
+    }
+
+    /// `PUT secrets/{name}`: stores `value` encrypted; an empty value removes it (admin).
+    pub async fn set_secret(&self, name: &str, value: &str) -> Result<NamedSecret> {
+        let body = SetSecret {
+            value: value.to_string(),
+        };
+        self.call(Method::PUT, &format!("/secrets/{}", seg(name)), &body)
+            .await
+    }
+
+    /// `GET audit`: configuration changes, newest first (admin).
+    pub async fn audit(&self, query: &AuditQuery) -> Result<AuditLog> {
+        self.get_query("/audit", query).await
     }
 }
 

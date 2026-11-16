@@ -103,3 +103,12 @@ fn auth_keeps_its_wire_shape() {
     same::<vigily_api::auth::Tokens>("auth_tokens");
     same::<vigily_api::auth::CreatedToken>("auth_created_token");
 }
+
+#[test]
+fn secrets_keep_their_wire_shape() {
+    use vigily_api::secrets::{AuditLog, NamedSecret, SecretsStatus};
+    same::<SecretsStatus>("secrets");
+    same::<SecretsStatus>("secrets_no_key");
+    same::<NamedSecret>("secret");
+    same::<AuditLog>("audit");
+}

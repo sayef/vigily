@@ -45,6 +45,11 @@ reqwest.workspace = true
 futures-util = { version = "0.3", default-features = false }
 # Random local tokens and access tokens (already in the tree through kv0's dependencies).
 getrandom = "0.3"
+# Encrypting stored webhook URLs and passwords: the XChaCha20-Poly1305 AEAD from RustCrypto (pure
+# Rust, audited) seals each value, and BLAKE3's key derivation turns the operator's key into the
+# 256-bit sealing key (blake3 is already in the tree through lance).
+chacha20poly1305 = "0.11"
+blake3 = "1"
 
 [target.'cfg(unix)'.dependencies]
 # Kill a timed-out schedule's whole process group.

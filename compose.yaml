@@ -28,6 +28,10 @@ services:
       VIGILY_ADMIN_TOKEN: ${VIGILY_ADMIN_TOKEN:?set VIGILY_ADMIN_TOKEN, for example to the output of openssl rand -hex 32}
       # Optional; see docs/guides/configuration.md.
       VIGILY_LOG: ${VIGILY_LOG:-warn,vigily=info}
+      # Encrypts stored secrets (notification webhooks, SMTP passwords); without it they can only
+      # come from the environment. The previous key is for rotation. See configuration.md#secrets.
+      VIGILY_SECRET_KEY: ${VIGILY_SECRET_KEY:-}
+      VIGILY_SECRET_KEY_PREVIOUS: ${VIGILY_SECRET_KEY_PREVIOUS:-}
     # The repository (/data/repo) and an optional /data/vigily.toml.
     volumes: ["vigily:/data"]
     # On `docker compose stop` the engine lets open requests finish (up to 10 s) and writes out what

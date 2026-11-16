@@ -271,6 +271,11 @@ pub fn new_secret() -> String {
 
 /// The repository's local token from `path`, created (mode 0600, directories 0700) when missing.
 pub fn load_or_create_token(path: &FsPath) -> std::io::Result<String> {
+    load_or_create(path, new_secret)
+}
+
+/// The value in `path`, or a new one from `make` written there (mode 0600, directories 0700).
+pub fn load_or_create(path: &FsPath, make: impl FnOnce() -> String) -> std::io::Result<String> {
     match std::fs::read_to_string(path) {
         Ok(t) if !t.trim().is_empty() => return Ok(t.trim().to_string()),
         Ok(_) => {}
@@ -284,7 +289,7 @@ pub fn load_or_create_token(path: &FsPath) -> std::io::Result<String> {
         std::os::unix::fs::DirBuilderExt::mode(&mut b, 0o700);
         b.create(dir)?;
     }
-    let token = new_secret();
+    let token = make();
     let mut o = std::fs::OpenOptions::new();
     o.write(true).create(true).truncate(true);
     #[cfg(unix)]

@@ -48,6 +48,12 @@ impl Setup {
             .env_remove("VIGILY_CONFIG")
             .env_remove("VIGILY_TOKEN_FILE")
             .env_remove("VIGILY_STATE_DIR")
+            .env_remove("VIGILY_SECRET_KEY")
+            .env_remove("VIGILY_SECRET_KEY_FILE")
+            .env_remove("VIGILY_SECRET_KEY_PREVIOUS")
+            .env_remove("VIGILY_SECRET_KEY_PREVIOUS_FILE")
+            .env_remove("VIGILY_ADMIN_TOKEN")
+            .env_remove("VIGILY_ADMIN_TOKEN_FILE")
             .env("VIGILY_LOG", "warn")
             .arg("--repo")
             .arg(self.repo())
@@ -248,4 +254,158 @@ fn the_local_token_survives_restarts_and_moves_from_its_old_place() {
     let second = s.ready(engine.id());
     assert_eq!(second.token, first.token);
     assert!(terminate(&mut engine).success());
+}
+
+/// A synthetic key or value, made fresh for each test.
+fn synthetic(prefix: &str) -> String {
+    let mut b = [0u8; 24];
+    getrandom::fill(&mut b).unwrap();
+    let hex: String = b.iter().map(|x| format!("{x:02x}")).collect();
+    format!("{prefix}-{hex}")
+}
+
+/// Starts an engine with `envs` (and `--mode server` when an admin token is among them), runs
+/// `f` with its URL and token, and stops it.
+async fn with_engine<F, Fut>(s: &Setup, envs: &[(&str, &str)], f: F)
+where
+    F: FnOnce(String, String) -> Fut,
+    Fut: std::future::Future<Output = ()>,
+{
+    let admin = envs
+        .iter()
+        .find(|(k, _)| *k == "VIGILY_ADMIN_TOKEN")
+        .map(|(_, v)| v.to_string());
+    let extra: &[&str] = if admin.is_some() {
+        &["--mode", "server"]
+    } else {
+        &[]
+    };
+    let mut c = s.command(extra);
+    c.envs(envs.iter().copied())
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    let mut engine = c.spawn().unwrap();
+    let file = s.ready(engine.id());
+    let token = admin.or(file.token.clone()).unwrap();
+    f(file.url.clone(), token).await;
+    assert!(terminate(&mut engine).success());
+}
+
+async fn secrets_of(url: &str, token: &str) -> Value {
+    reqwest::Client::new()
+        .get(format!("{url}/api/v1/secrets"))
+        .bearer_auth(token)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap()
+}
+
+async fn put_secret(url: &str, token: &str, name: &str, value: &str) -> (u16, Value) {
+    let res = reqwest::Client::new()
+        .put(format!("{url}/api/v1/secrets/{name}"))
+        .bearer_auth(token)
+        .json(&json!({ "value": value }))
+        .send()
+        .await
+        .unwrap();
+    (res.status().as_u16(), res.json().await.unwrap())
+}
+
+#[tokio::test]
+async fn stored_secrets_survive_restarts_and_move_to_a_new_key() {
+    let s = Setup::new();
+    let paths = s.paths();
+    let value = synthetic("value");
+    // Local mode: the engine generates its key file.
+    with_engine(&s, &[], |url, token| async move {
+        let st = secrets_of(&url, &token).await;
+        assert_eq!(st["key"], "file");
+        let (status, body) = put_secret(&url, &token, "demo", &value).await;
+        assert_eq!(status, 200, "{body}");
+    })
+    .await;
+    assert_eq!(mode(&paths.secret_key), 0o600);
+    assert_eq!(
+        std::fs::read_to_string(&paths.secret_key)
+            .unwrap()
+            .trim()
+            .len(),
+        64
+    );
+
+    // Server mode, rotated: a new key from a file, the generated one as the previous key.
+    let admin = synthetic("admin");
+    let new_key = s.dir.path().join("new.key");
+    std::fs::write(&new_key, synthetic("key")).unwrap();
+    let (new_key, old_key) = (
+        new_key.to_str().unwrap().to_string(),
+        paths.secret_key.to_str().unwrap().to_string(),
+    );
+    let rotated = [
+        ("VIGILY_ADMIN_TOKEN", admin.as_str()),
+        ("VIGILY_SECRET_KEY_FILE", new_key.as_str()),
+        ("VIGILY_SECRET_KEY_PREVIOUS_FILE", old_key.as_str()),
+    ];
+    with_engine(&s, &rotated, |url, token| async move {
+        let st = secrets_of(&url, &token).await;
+        assert_eq!(st["key"], "env");
+        assert_eq!(st["previous_key"], true);
+        assert_eq!(st["secrets"][0]["name"], "demo");
+        assert!(st["secrets"][0].get("undecryptable").is_none(), "{st}");
+    })
+    .await;
+
+    // The new key alone opens it now: it was sealed again at start.
+    let new_only = [
+        ("VIGILY_ADMIN_TOKEN", admin.as_str()),
+        ("VIGILY_SECRET_KEY_FILE", new_key.as_str()),
+    ];
+    with_engine(&s, &new_only, |url, token| async move {
+        let st = secrets_of(&url, &token).await;
+        assert_eq!(st["previous_key"], false);
+        assert!(st["secrets"][0].get("undecryptable").is_none(), "{st}");
+    })
+    .await;
+
+    // Another key opens nothing; a server without a key refuses to store values.
+    let other = synthetic("key");
+    let wrong = [
+        ("VIGILY_ADMIN_TOKEN", admin.as_str()),
+        ("VIGILY_SECRET_KEY", other.as_str()),
+    ];
+    with_engine(&s, &wrong, |url, token| async move {
+        let st = secrets_of(&url, &token).await;
+        assert_eq!(st["secrets"][0]["undecryptable"], true, "{st}");
+    })
+    .await;
+    with_engine(
+        &s,
+        &[("VIGILY_ADMIN_TOKEN", admin.as_str())],
+        |url, token| async move {
+            let st = secrets_of(&url, &token).await;
+            assert_eq!(st["key"], "none");
+            assert_eq!(st["can_store"], false);
+            let (status, body) = put_secret(&url, &token, "other", "synthetic-value").await;
+            assert_eq!(status, 409);
+            assert_eq!(body["error"]["code"], "secret_key_missing");
+        },
+    )
+    .await;
+}
+
+#[test]
+fn a_short_secret_key_is_refused() {
+    let s = Setup::new();
+    let out = s
+        .command(&[])
+        .env("VIGILY_SECRET_KEY", "too-short")
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("VIGILY_SECRET_KEY is shorter"));
 }

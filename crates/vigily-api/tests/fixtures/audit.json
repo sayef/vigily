@@ -1,0 +1,16 @@
+{
+  "entries": [
+    {
+      "at": 1763290860000000,
+      "principal": "admin",
+      "action": "secret.removed",
+      "target": "smtp.password"
+    },
+    {
+      "at": 1763290800000000,
+      "principal": "token:ops",
+      "action": "secret.set",
+      "target": "smtp.password"
+    }
+  ]
+}

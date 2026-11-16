@@ -16,6 +16,8 @@
 //! - [`drift`]: suites and the behaviour- and data-drift verdicts.
 //! - [`traces`]: spans, trace summaries, the payload policy, and the traces list and detail.
 //! - [`auth`]: scopes, who a request is, sessions and access tokens.
+//! - [`secrets`]: the encryption key's status, secrets (never their values) and the audit trail
+//!   of configuration changes.
 //! - [`ingest`]: the batches of operations a client writes runs with, and their reports.
 //! - [`local`]: where an engine on this machine writes down its address and token; with the
 //!   `client` feature, finding or starting it (`local::resolve`).
@@ -35,6 +37,7 @@ pub mod ingest;
 pub mod local;
 pub mod model;
 pub mod runs;
+pub mod secrets;
 pub mod traces;
 
 use serde::{Deserialize, Serialize};
@@ -66,6 +69,9 @@ pub mod code {
     /// `POST admin/purge` (and an erasing `POST traces/delete`) without `force`: a storage tag
     /// keeps an older version that still holds deleted data, so nothing was purged.
     pub const TAG_BLOCKS_PURGE: &str = "tag_blocks_purge";
+    /// Storing a secret value needs an encryption key (`VIGILY_SECRET_KEY`), which this engine
+    /// does not have; reference an environment variable (`env:NAME`) instead, or set the key.
+    pub const SECRET_KEY_MISSING: &str = "secret_key_missing";
 }
 
 /// Every failed `/api/v1` request: `{"error": {"code", "message", "position"?}}`.

@@ -138,6 +138,9 @@ pub struct EnginePaths {
     pub lock: PathBuf,
     pub token: PathBuf,
     pub log: PathBuf,
+    /// The key a local engine generates to encrypt stored secrets when `VIGILY_SECRET_KEY` is
+    /// not set (mode 0600).
+    pub secret_key: PathBuf,
 }
 
 impl EnginePaths {
@@ -150,6 +153,7 @@ impl EnginePaths {
             lock: dir.join(format!("{key}.lock")),
             token: dir.join(format!("{key}.token")),
             log: dir.join(format!("{key}.log")),
+            secret_key: dir.join(format!("{key}.secret-key")),
             dir,
         }
     }

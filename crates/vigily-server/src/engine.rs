@@ -274,6 +274,15 @@ pub async fn run(opts: Options) -> Result<ExitCode> {
         };
         AuthSetup::Local { token_file }
     };
+    let mut keys = crate::secrets::SecretKeys::from_env().map_err(|e| anyhow::anyhow!(e))?;
+    if !server {
+        keys = keys.with_local_file(&paths.secret_key).with_context(|| {
+            format!(
+                "could not read or create the secret key file {}",
+                paths.secret_key.display()
+            )
+        })?;
+    }
     let config_path = opts.config.clone().or_else(|| {
         let p = PathBuf::from("vigily.toml");
         p.exists().then_some(p)
@@ -296,7 +305,21 @@ pub async fn run(opts: Options) -> Result<ExitCode> {
             if n == 1 { "schedule" } else { "schedules" }
         );
     }
-    let state = AppState::with(store, records, config);
+    if keys.current.is_none() {
+        eprintln!(
+            "note: no VIGILY_SECRET_KEY: notification channels can read secrets from the \
+             environment (env:NAME), but storing secret values is refused until it is set"
+        );
+    }
+    let state = AppState::with_options(
+        store,
+        records,
+        config,
+        crate::EngineOptions {
+            secrets: keys,
+            ..Default::default()
+        },
+    );
     let idle_timeout = opts
         .idle_timeout
         .or(opts.auto_started.then_some(DEFAULT_IDLE_TIMEOUT))
