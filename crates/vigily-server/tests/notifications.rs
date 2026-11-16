@@ -530,8 +530,10 @@ async fn each_kind_gets_its_payload_once_and_webhooks_are_signed() {
         .await
         .unwrap();
     vigily_server::delivery::dispatch(&a.state, &stored[0], &channels).await;
-    tokio::time::sleep(Duration::from_millis(200)).await;
-    // `quiet` was not queued before, so it is now; the four others are not sent again.
+    // `quiet` was not queued before, so it is now; the four others are not sent again (wait for
+    // the fifth request, then a little longer for any repeat).
+    r.wait_for(5).await;
+    tokio::time::sleep(Duration::from_millis(300)).await;
     let got = r.got();
     assert_eq!(
         got.len(),
