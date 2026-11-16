@@ -118,7 +118,8 @@ fn read_only(c: &ChannelRecord) -> Result<(), ApiError> {
         return Err(ApiError::new(
             StatusCode::CONFLICT,
             "this channel comes from [alerts] webhook in vigily.toml and is read-only; edit or \
-             remove it there (it is deprecated: add a webhook channel instead)",
+             remove it there (it is deprecated: add a webhook channel instead, with `vigily \
+             channels add NAME --kind webhook`)",
         ));
     }
     Ok(())

@@ -311,7 +311,8 @@ pub async fn run(opts: Options) -> Result<ExitCode> {
     if config.alerts.webhook.is_some() {
         eprintln!(
             "note: [alerts] webhook in vigily.toml is deprecated; it is served as the read-only \
-             notification channel `config`. Add a webhook channel through the API instead"
+             notification channel `config`. Replace it with a webhook channel: \
+             vigily channels add NAME --kind webhook"
         );
     }
     if keys.current.is_none() {
