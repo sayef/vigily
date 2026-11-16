@@ -25,7 +25,8 @@ use crate::evals::{
 use crate::ingest::{IngestBatch, IngestReport};
 use crate::model::{Run, RunPatch};
 use crate::notifications::{
-    Channel, ChannelDeleted, ChannelPatch, Channels, Deliveries, NewChannel, TestResult,
+    Channel, ChannelDeleted, ChannelPatch, Channels, Deliveries, NewChannel, Rules, RulesUpdate,
+    TestResult,
 };
 use crate::runs::{
     CreateRun, CreatedRun, DeleteRuns, Deleted, FinishRun, Flushed, Meta, Optimized, PointsQuery,
@@ -751,6 +752,17 @@ impl Client {
             &Value::Object(Default::default()),
         )
         .await
+    }
+
+    /// `GET notifications/rules`: the routing rules and their version.
+    pub async fn rules(&self) -> Result<Rules> {
+        self.get("/notifications/rules").await
+    }
+
+    /// `PUT notifications/rules` (admin): replaces the rules read at `update.version`; a 409
+    /// `conflict` when they changed since.
+    pub async fn set_rules(&self, update: &RulesUpdate) -> Result<Rules> {
+        self.call(Method::PUT, "/notifications/rules", update).await
     }
 
     /// `GET alerts/{id}/deliveries`.

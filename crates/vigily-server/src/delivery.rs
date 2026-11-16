@@ -354,7 +354,7 @@ async fn attempt(state: Arc<AppState>, job: Job) {
             .queue(&job.alert_id, &job.channel_id, Instant::now() + wait);
         return;
     }
-    let channel = crate::channels::get_record(rs, &job.channel_id)
+    let channel = crate::channels::find(&state, &job.channel_id)
         .await
         .ok()
         .flatten();
@@ -411,6 +411,15 @@ async fn attempt(state: Arc<AppState>, job: Job) {
     }
     if let Err(e) = put(rs, &d).await {
         tracing::warn!(error = %e, "could not record a delivery");
+    }
+    // The alert's `delivered` keeps reporting the [alerts] webhook, as it always did.
+    if d.channel_id == crate::channels::CONFIG_ID && d.status != DeliveryStatus::Pending {
+        if let Ok(Some(v)) = rs.get(&format!("alert/{}", d.alert_id)).await {
+            if let Ok(mut current) = serde_json::from_value::<Alert>(v) {
+                current.delivered = Some(d.status == DeliveryStatus::Sent);
+                let _ = vigily_core::evals::update_alert(rs, &current).await;
+            }
+        }
     }
 }
 
@@ -494,7 +503,12 @@ pub async fn send(state: &AppState, c: &ChannelRecord, msg: &Message) -> Outcome
                     None
                 };
                 let body = serde_json::to_vec(&msg.body(kind)).unwrap_or_default();
-                post(state, &url, body, signing_key.as_deref()).await
+                // The operator's own [alerts] webhook may point anywhere; channels made over the
+                // API may not reach internal addresses from a server-mode engine.
+                let guard = c.config_url.is_none()
+                    && state.auth.mode().name() == "server"
+                    && !state.config.notifications.allow_private_networks;
+                post(state, &url, body, signing_key.as_deref(), guard).await
             }
         }
     };
@@ -527,9 +541,18 @@ fn origin(url: &str) -> String {
         .unwrap_or_else(|| "the channel's URL".into())
 }
 
-async fn post(state: &AppState, url: &str, body: Vec<u8>, signing_key: Option<&str>) -> Outcome {
-    let mut req = state
-        .http
+async fn post(
+    state: &AppState,
+    url: &str,
+    body: Vec<u8>,
+    signing_key: Option<&str>,
+    guard: bool,
+) -> Outcome {
+    let client = match crate::ssrf::client_for(url, guard, state.notifier.options.timeout).await {
+        Ok(c) => c,
+        Err(e) => return Outcome::failed(e, false),
+    };
+    let mut req = client
         .post(url)
         .header(reqwest::header::CONTENT_TYPE, "application/json")
         .header(
@@ -712,6 +735,7 @@ mod tests {
             created_at: 0,
             updated_at: 0,
             changed_by: None,
+            config_url: None,
         };
         c.settings.burst = Some(2);
         c.settings.per_minute = Some(60);

@@ -1,0 +1,38 @@
+{
+  "version": 3,
+  "rules": [
+    {
+      "name": "failed schedules to on-call mail",
+      "match": {
+        "kinds": [
+          "schedule_failed"
+        ]
+      },
+      "channels": [
+        "a0b1c2d3e4f50617"
+      ]
+    },
+    {
+      "name": "critical intent regressions page and stop",
+      "match": {
+        "kinds": [
+          "behaviour_drift",
+          "data_drift"
+        ],
+        "severities": [
+          "critical"
+        ],
+        "experiment": "intent-*",
+        "suite": "*clf-v?",
+        "schedule": "nightly-*"
+      },
+      "channels": [
+        "c4d5e6f708192a3b",
+        "3f9c2a1b7d4e6f80"
+      ],
+      "stop": true
+    }
+  ],
+  "updated_at": 1794498400000000,
+  "changed_by": "admin"
+}

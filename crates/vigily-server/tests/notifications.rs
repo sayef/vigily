@@ -42,7 +42,13 @@ fn state_over(records: Arc<MemoryRecords>, key: &str) -> Arc<AppState> {
     AppState::with_options(
         store,
         records,
-        Config::default(),
+        Config {
+            // The receivers here listen on 127.0.0.1.
+            notifications: vigily_server::config::NotificationsConfig {
+                allow_private_networks: true,
+            },
+            ..Config::default()
+        },
         EngineOptions {
             auth: AuthMode::Server {
                 admin_token: ADMIN.into(),
@@ -199,6 +205,8 @@ fn alert(dedupe: &str) -> Alert {
         dedupe: dedupe.into(),
         delivered: None,
         deliveries: None,
+        experiment: None,
+        suite_name: None,
     }
 }
 

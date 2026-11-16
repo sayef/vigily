@@ -16,7 +16,10 @@
 //! keep_output = 50                    # newest keep_output
 //!
 //! [alerts]
-//! webhook = "https://hooks.example.com/vigily"
+//! webhook = "https://hooks.example.com/vigily"  # deprecated: add a webhook channel instead
+//!
+//! [notifications]
+//! allow_private_networks = false      # server mode: webhooks to internal addresses
 //!
 //! [drift]
 //! alpha = 0.01
@@ -52,6 +55,8 @@ pub struct Config {
     pub alerts: AlertsConfig,
     #[serde(default)]
     pub drift: DriftSettings,
+    #[serde(default)]
+    pub notifications: NotificationsConfig,
     #[serde(default)]
     pub tracing: vigily_core::traces::TracingConfig,
     /// The directory relative paths are resolved against: the file's directory.
@@ -123,9 +128,21 @@ fn yes() -> bool {
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct AlertsConfig {
-    /// A URL that receives each new alert as a JSON `POST`.
+    /// A URL that receives each new alert as a JSON `POST`. Deprecated: it is served as the
+    /// read-only notification channel `config`; add a webhook channel instead.
     #[serde(default)]
     pub webhook: Option<String>,
+}
+
+/// `[notifications]`.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct NotificationsConfig {
+    /// Let a server-mode engine send webhooks (Slack, Teams, Discord, generic) to loopback,
+    /// private, link-local and unique-local addresses. Off by default: channels made over the API
+    /// could otherwise reach the engine's own network.
+    #[serde(default)]
+    pub allow_private_networks: bool,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]

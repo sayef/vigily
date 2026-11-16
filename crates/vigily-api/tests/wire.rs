@@ -123,3 +123,10 @@ fn notifications_keep_their_wire_shape() {
     same::<WebhookPayload>("webhook_payload");
     same::<Vec<evals::Alert>>("alerts_deliveries");
 }
+
+#[test]
+fn routing_rules_keep_their_wire_shape() {
+    use vigily_api::notifications::{Rules, RulesUpdate};
+    same::<Rules>("rules");
+    same::<RulesUpdate>("rules_update");
+}
