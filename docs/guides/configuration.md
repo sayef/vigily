@@ -122,9 +122,11 @@ echo "VIGILY_SECRET_KEY=$(openssl rand -hex 32)" >> .env   # keep it with the ad
 one; after that start the old key can go. Values that neither key opens are named in a warning at
 start and shown as `undecryptable` until they are stored again.
 
-`GET /api/v1/secrets` shows the key's status and the stored secrets; `PUT /api/v1/secrets/<name>`
-with `{"value": "..."}` stores one, and an empty value removes it. Every change to a secret is in
-the audit trail (`GET /api/v1/audit`, admin) with who made it, never the value.
+`vigily secrets status` (or `GET /api/v1/secrets`) shows the key's status and the state of every
+secret; `PUT /api/v1/secrets/<name>` with `{"value": "..."}` stores one, and an empty value removes
+it. Channel secrets are set with the channel, in the web app or with `vigily channels add|edit`,
+which ask for values without echo ([Alert notifications](notifications.md#secrets)). Every change to
+a secret is in the audit trail (`GET /api/v1/audit`, admin) with who made it, never the value.
 
 ## vigily.toml
 
@@ -181,7 +183,9 @@ an expression that can never fire (such as 30 February) is rejected at start.
 `[alerts] webhook` still works, but is deprecated: the engine serves it as the read-only
 notification channel `config` (a webhook channel marked default, posting the `vigily.alert/1`
 [document](http-api.md#the-webhook-document), whose `event` and `alert` fields keep their earlier
-meaning), and says so at start. Add a webhook channel instead, and remove the line.
+meaning), and says so at start. Add a webhook channel instead (`vigily channels add NAME --kind
+webhook --default`), and remove the line. [Alert notifications](notifications.md) covers channels
+and routing rules.
 
 `[notifications] allow_private_networks`: an engine in server mode resolves each Slack, Teams,
 Discord and webhook target and refuses to send when it points at a loopback, private (10/8,

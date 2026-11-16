@@ -97,6 +97,7 @@ nav:
       - Configuration and vigily.toml: guides/configuration.md
       - Scheduled evaluations and security: guides/scheduled-evals.md
       - Drift methods: guides/drift.md
+      - Alert notifications: guides/notifications.md
       - LLM tracing: guides/tracing.md
       - Self-hosting and storage: guides/storage.md
       - Running a team server: guides/team-server.md

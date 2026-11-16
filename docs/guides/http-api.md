@@ -129,6 +129,9 @@ sent twice replaces points instead of adding them. A write to a deleted run is a
 
 ## Notification channels
 
+The web app (Settings → Notifications) and `vigily channels|rules|secrets` use these routes;
+[Alert notifications](notifications.md) explains channels, rules and secrets.
+
 | Method and path | Scope | Answer |
 |---|---|---|
 | `GET /api/v1/notifications/channels` | read | `{channels}`: each `{id, name, kind, enabled, default, settings, secrets, source, created_at, updated_at, changed_by?, last_delivery?}`, secrets as states only |
