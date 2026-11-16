@@ -5,6 +5,9 @@
 //! detected drift raises an alert once (alerts are de-duplicated by suite, run and score or
 //! feature). Failed schedules raise alerts too (see [`crate::scheduler`]).
 //!
+//! Each new alert is queued for the enabled notification channels marked default
+//! ([`crate::delivery`]).
+//!
 //! When `alerts.webhook` is configured, each new alert is sent there as a JSON `POST`:
 //!
 //! ```json
@@ -36,6 +39,17 @@ pub async fn notify(state: &AppState, alert: Alert) -> bool {
         }
     };
     tracing::warn!(title = %stored.title, "alert");
+    // Queued for the notification channels marked default; the worker delivers them.
+    match crate::channels::list(&*state.records).await {
+        Ok(channels) => {
+            let to: Vec<_> = channels
+                .into_iter()
+                .filter(|c| c.enabled && c.default)
+                .collect();
+            crate::delivery::dispatch(state, &stored, &to).await;
+        }
+        Err(e) => tracing::warn!(error = %e, "could not read the notification channels"),
+    }
     let Some(url) = state.config.alerts.webhook.clone() else {
         return true;
     };
@@ -191,6 +205,7 @@ async fn check_suite(
                 acknowledged_at: None,
                 dedupe: format!("behaviour/{}/{}/{score}", suite.key, run.run_id),
                 delivered: None,
+                deliveries: None,
             },
         )
         .await as usize;
@@ -229,6 +244,7 @@ async fn check_suite(
                 acknowledged_at: None,
                 dedupe: format!("data/{}/{}/{}", suite.key, run.run_id, f.feature),
                 delivered: None,
+                deliveries: None,
             },
         )
         .await as usize;

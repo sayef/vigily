@@ -1,0 +1,15 @@
+{
+  "name": "incident hook",
+  "kind": "webhook",
+  "enabled": true,
+  "default": false,
+  "settings": {},
+  "secrets": {
+    "signing_key": {
+      "env": "VIGILY_HOOK_SIGNING_KEY"
+    },
+    "url": {
+      "value": "https://hooks.example.com/vigily"
+    }
+  }
+}

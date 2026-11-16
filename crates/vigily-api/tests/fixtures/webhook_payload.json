@@ -1,0 +1,19 @@
+{
+  "event": "vigily.alert",
+  "schema": "vigily.alert/1",
+  "test": false,
+  "alert": {
+    "id": "00001794498300556243-381f85",
+    "kind": "behaviour_drift",
+    "severity": "critical",
+    "title": "accuracy dropped on intent-clf-v2",
+    "detail": "accuracy is 0.810 against 0.900 on the same 200 items over 5 baseline runs (difference -0.090). 14 items that passed in the last baseline run fail now.",
+    "suite": "916d93593f1a",
+    "run_id": "01a1d06ee5c1732fb3d654b9a0808e5b",
+    "schedule": "nightly-intents",
+    "created_at": 1794498300556243,
+    "time": "2026-11-12T15:45:00Z",
+    "dedupe": "behaviour/916d93593f1a/01a1d06ee5c1732fb3d654b9a0808e5b/accuracy"
+  },
+  "url": "https://vigily.example.com/drift/916d93593f1a"
+}

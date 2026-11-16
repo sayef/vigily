@@ -546,6 +546,7 @@ async fn webhook_delivery_keeps_acknowledgements() {
         acknowledged_at: None,
         dedupe: "schedule/nightly/1".into(),
         delivered: None,
+        deliveries: None,
     };
     let st = state.clone();
     let task = tokio::spawn(async move { monitor::notify(&st, alert).await });

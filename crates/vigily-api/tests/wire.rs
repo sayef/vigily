@@ -112,3 +112,14 @@ fn secrets_keep_their_wire_shape() {
     same::<NamedSecret>("secret");
     same::<AuditLog>("audit");
 }
+
+#[test]
+fn notifications_keep_their_wire_shape() {
+    use vigily_api::notifications::{Channels, Deliveries, NewChannel, TestResult, WebhookPayload};
+    same::<Channels>("channels");
+    same::<NewChannel>("channel_new");
+    same::<Deliveries>("deliveries");
+    same::<TestResult>("channel_test");
+    same::<WebhookPayload>("webhook_payload");
+    same::<Vec<evals::Alert>>("alerts_deliveries");
+}

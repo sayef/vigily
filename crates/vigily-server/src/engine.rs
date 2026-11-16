@@ -59,6 +59,8 @@ pub struct Options {
     /// Where the local token is kept; `engines/<key>.token` in the state directory by default.
     pub token_file: Option<PathBuf>,
     pub insecure_no_auth: bool,
+    /// The address people open the web app at, for links in notifications.
+    pub public_url: Option<String>,
 }
 
 impl Options {
@@ -78,6 +80,7 @@ impl Options {
             auto_started: false,
             token_file: None,
             insecure_no_auth: false,
+            public_url: None,
         }
     }
 
@@ -317,6 +320,7 @@ pub async fn run(opts: Options) -> Result<ExitCode> {
         config,
         crate::EngineOptions {
             secrets: keys,
+            public_url: opts.public_url.clone().filter(|u| !u.trim().is_empty()),
             ..Default::default()
         },
     );

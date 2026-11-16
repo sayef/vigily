@@ -1,0 +1,63 @@
+{
+  "channels": [
+    {
+      "id": "3f9c2a1b7d4e6f80",
+      "name": "ml-alerts",
+      "kind": "slack",
+      "enabled": true,
+      "default": true,
+      "settings": {},
+      "secrets": {
+        "webhook_url": {
+          "source": "stored",
+          "hint": "…Xk2q",
+          "changed_by": "admin",
+          "changed_at": 1794498000000000
+        }
+      },
+      "source": "api",
+      "created_at": 1794498000000000,
+      "updated_at": 1794498000000000,
+      "changed_by": "admin",
+      "last_delivery": {
+        "alert_id": "00001794498300556243-381f85",
+        "channel_id": "3f9c2a1b7d4e6f80",
+        "channel_name": "ml-alerts",
+        "kind": "slack",
+        "status": "sent",
+        "attempts": 1,
+        "status_code": 200,
+        "created_at": 1794498300600000,
+        "updated_at": 1794498300900000
+      }
+    },
+    {
+      "id": "a0b1c2d3e4f50617",
+      "name": "on-call mail",
+      "kind": "email",
+      "enabled": true,
+      "default": false,
+      "settings": {
+        "host": "smtp.example.com",
+        "port": 587,
+        "security": "starttls",
+        "username": "vigily",
+        "from": "vigily <vigily@example.com>",
+        "to": [
+          "oncall@example.com"
+        ],
+        "burst": 3,
+        "per_minute": 10
+      },
+      "secrets": {
+        "password": {
+          "source": "env:SMTP_PASSWORD"
+        }
+      },
+      "source": "api",
+      "created_at": 1794498100000000,
+      "updated_at": 1794498200000000,
+      "changed_by": "token:ops"
+    }
+  ]
+}

@@ -326,6 +326,7 @@ async fn execute_from(
             acknowledged_at: None,
             dedupe: format!("schedule/{}/{at}", cfg.name),
             delivered: None,
+            deliveries: None,
         },
     )
     .await;

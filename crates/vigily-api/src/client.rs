@@ -24,6 +24,9 @@ use crate::evals::{
 };
 use crate::ingest::{IngestBatch, IngestReport};
 use crate::model::{Run, RunPatch};
+use crate::notifications::{
+    Channel, ChannelDeleted, ChannelPatch, Channels, Deliveries, NewChannel, TestResult,
+};
 use crate::runs::{
     CreateRun, CreatedRun, DeleteRuns, Deleted, FinishRun, Flushed, Meta, Optimized, PointsQuery,
     PurgeRequest, PurgeSummary, ResumedRun, RunDetail, RunFields, RunParams, RunRow, RunSeries,
@@ -701,6 +704,58 @@ impl Client {
         };
         self.call(Method::PUT, &format!("/secrets/{}", seg(name)), &body)
             .await
+    }
+
+    // -----------------------------------------------------------------------------------------
+    // Notification channels
+
+    /// `GET notifications/channels`.
+    pub async fn channels(&self) -> Result<Channels> {
+        self.get("/notifications/channels").await
+    }
+
+    /// `GET notifications/channels/{id}`.
+    pub async fn channel(&self, id: &str) -> Result<Channel> {
+        self.get(&format!("/notifications/channels/{}", seg(id)))
+            .await
+    }
+
+    /// `POST notifications/channels` (admin).
+    pub async fn create_channel(&self, req: &NewChannel) -> Result<Channel> {
+        self.post("/notifications/channels", req).await
+    }
+
+    /// `PATCH notifications/channels/{id}` (admin).
+    pub async fn update_channel(&self, id: &str, patch: &ChannelPatch) -> Result<Channel> {
+        self.call(
+            Method::PATCH,
+            &format!("/notifications/channels/{}", seg(id)),
+            patch,
+        )
+        .await
+    }
+
+    /// `DELETE notifications/channels/{id}` (admin): the channel and its stored secrets.
+    pub async fn delete_channel(&self, id: &str) -> Result<ChannelDeleted> {
+        self.read(self.request(
+            Method::DELETE,
+            self.url(&format!("/notifications/channels/{}", seg(id))),
+        ))
+        .await
+    }
+
+    /// `POST notifications/channels/{id}/test` (admin): one attempt to send a test alert.
+    pub async fn test_channel(&self, id: &str) -> Result<TestResult> {
+        self.post(
+            &format!("/notifications/channels/{}/test", seg(id)),
+            &Value::Object(Default::default()),
+        )
+        .await
+    }
+
+    /// `GET alerts/{id}/deliveries`.
+    pub async fn alert_deliveries(&self, id: &str) -> Result<Deliveries> {
+        self.get(&format!("/alerts/{}/deliveries", seg(id))).await
     }
 
     /// `GET audit`: configuration changes, newest first (admin).

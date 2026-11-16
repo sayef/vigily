@@ -16,6 +16,8 @@
 //! - [`drift`]: suites and the behaviour- and data-drift verdicts.
 //! - [`traces`]: spans, trace summaries, the payload policy, and the traces list and detail.
 //! - [`auth`]: scopes, who a request is, sessions and access tokens.
+//! - [`notifications`]: alert channels (Slack, Teams, Discord, webhooks, e-mail), their
+//!   deliveries, and the document webhook channels post.
 //! - [`secrets`]: the encryption key's status, secrets (never their values) and the audit trail
 //!   of configuration changes.
 //! - [`ingest`]: the batches of operations a client writes runs with, and their reports.
@@ -36,6 +38,7 @@ pub mod evals;
 pub mod ingest;
 pub mod local;
 pub mod model;
+pub mod notifications;
 pub mod runs;
 pub mod secrets;
 pub mod traces;
