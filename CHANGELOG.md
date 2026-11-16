@@ -6,6 +6,21 @@ All notable changes to vigily are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Encrypted secrets for notification channels: values are stored in the repository encrypted with
+  XChaCha20-Poly1305 under a key derived with BLAKE3 from `VIGILY_SECRET_KEY` (or
+  `VIGILY_SECRET_KEY_FILE`), bound to the secret's name, and never returned by the API.
+  `GET /api/v1/secrets` shows each secret's source, last four characters, who changed it and when;
+  `PUT /api/v1/secrets/{name}` stores or (with an empty value) removes one. A local engine without
+  the key generates `engines/<key>.secret-key` (0600); a server-mode engine refuses to store values
+  without it (`409 secret_key_missing`).
+- Key rotation: with `VIGILY_SECRET_KEY_PREVIOUS`, values stored under the old key are encrypted
+  again with the new one at start; values no key opens are named in a startup warning and reported
+  as `undecryptable`.
+- An audit trail of configuration changes (`GET /api/v1/audit`, admin): who changed which secret,
+  never the value. `GET /api/v1/info` lists the `secrets` and `audit` capabilities.
+
 ## [0.1.0-beta.1](https://github.com/sayef/vigily/releases/tag/v0.1.0-beta.1) - 2026-11-15
 
 The first published release, as betas (0.1.0-beta.N) before 0.1.0. Earlier builds were never

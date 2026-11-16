@@ -24,7 +24,8 @@ unknown token is a 401 `unauthorized`, a token without the route's scope a 403 `
 
 **Errors.** Every error answer is `{"error": {"code", "message", "position"?}}`, where `code` is one
 of `not_found`, `invalid_argument`, `conflict`, `run_deleted`, `unauthorized`, `forbidden`,
-`too_large`, `overloaded` or `internal`, and `position` points into a run query that did not parse.
+`too_large`, `overloaded`, `internal`, `tag_blocks_purge` or `secret_key_missing`, and `position`
+points into a run query that did not parse.
 
 **Bodies.** Write routes take `Content-Type: application/json` (ingest also
 `application/x-ndjson`) and may be gzip-compressed (`Content-Encoding: gzip`), up to 32 MiB after
@@ -125,6 +126,14 @@ sent twice replaces points instead of adding them. A write to a deleted run is a
 | `GET /api/v1/tracing/policy?project=` | read | the payload policy a client applies before sending |
 | `DELETE /api/v1/traces/{id}` | admin | deletes one trace |
 | `POST /api/v1/traces/delete` | admin | `{ids, erase?, force?}` → deletes or erases traces |
+
+## Secrets and the audit trail
+
+| Method and path | Scope | Answer |
+|---|---|---|
+| `GET /api/v1/secrets` | read | `{key, previous_key, can_store, message?, secrets}`: the encryption key's status and each stored secret's `{name, source, hint?, changed_by?, changed_at?, undecryptable?}`, never a value |
+| `PUT /api/v1/secrets/{name}` | admin | `{value}` → the secret's state; an empty value removes it; 409 `secret_key_missing` without a key ([Secrets](configuration.md#secrets)) |
+| `GET /api/v1/audit?limit=` | admin | `{entries}`: configuration changes, newest first, each `{at, principal, action, target}` |
 
 ## Storage administration
 
