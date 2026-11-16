@@ -9,6 +9,7 @@ import { ThemeProvider, useTheme } from "@/components/theme";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { SelectionProvider } from "@/lib/selection";
 import { AlertsPage } from "@/pages/alerts";
+import { ChannelPage } from "@/pages/channel";
 import { ComparePage } from "@/pages/compare";
 import { CompareRunsPage } from "@/pages/compare-runs";
 import { DatasetPage, DatasetsPage } from "@/pages/datasets";
@@ -16,6 +17,7 @@ import { DriftPage, SuitePage } from "@/pages/drift";
 import { ExperimentsPage } from "@/pages/experiments";
 import { SchedulePage, SchedulesPage } from "@/pages/schedules";
 import { ExplorerPage } from "@/pages/explorer";
+import { NotificationsPage } from "@/pages/notifications";
 import { RunPage } from "@/pages/run";
 import { RunsPage } from "@/pages/runs";
 import { SettingsPage } from "@/pages/settings";
@@ -76,6 +78,9 @@ createRoot(document.getElementById("root")!).render(
                     <Route path="drift/:key" element={<SuitePage />} />
                     <Route path="alerts" element={<AlertsPage />} />
                     <Route path="settings" element={<SettingsPage />} />
+                    <Route path="settings/notifications" element={<NotificationsPage />} />
+                    <Route path="settings/notifications/channels/new" element={<ChannelPage />} />
+                    <Route path="settings/notifications/channels/:id" element={<ChannelPage />} />
                     <Route path="*" element={<NotFound />} />
                   </Route>
                 </Routes>

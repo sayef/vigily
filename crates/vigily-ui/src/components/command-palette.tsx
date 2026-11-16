@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Command } from "cmdk";
-import { Activity, Bell, CalendarClock, ChartLine, Database, FlaskConical, GitCompare, Keyboard, ListTree, Moon, Rows3, Settings, Sun, X } from "lucide-react";
+import { Activity, Bell, CalendarClock, ChartLine, Database, FlaskConical, GitCompare, Keyboard, ListTree, Moon, Send, Rows3, Settings, Sun, X } from "lucide-react";
 import { useNavigate } from "react-router";
 import { StatusBadge } from "@/components/status";
 import { useTheme } from "@/components/theme";
@@ -70,6 +70,9 @@ export function CommandPalette({ open, onOpenChange, onShortcuts }: { open: bool
               </Command.Item>
               <Command.Item className={item} onSelect={() => go("/settings")}>
                 <Settings /> Settings
+              </Command.Item>
+              <Command.Item className={item} onSelect={() => go("/settings/notifications")}>
+                <Send /> Notifications
               </Command.Item>
             </Command.Group>
             <Command.Group heading="Actions" className={group}>
