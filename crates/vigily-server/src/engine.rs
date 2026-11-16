@@ -308,6 +308,12 @@ pub async fn run(opts: Options) -> Result<ExitCode> {
             if n == 1 { "schedule" } else { "schedules" }
         );
     }
+    if config.alerts.webhook.is_some() {
+        eprintln!(
+            "note: [alerts] webhook in vigily.toml is deprecated; it is served as the read-only \
+             notification channel `config`. Add a webhook channel through the API instead"
+        );
+    }
     if keys.current.is_none() {
         eprintln!(
             "note: no VIGILY_SECRET_KEY: notification channels can read secrets from the \

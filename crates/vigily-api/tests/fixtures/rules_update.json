@@ -1,0 +1,11 @@
+{
+  "version": 0,
+  "rules": [
+    {
+      "match": {},
+      "channels": [
+        "config"
+      ]
+    }
+  ]
+}

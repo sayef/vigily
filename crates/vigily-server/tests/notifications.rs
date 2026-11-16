@@ -42,7 +42,13 @@ fn state_over(records: Arc<MemoryRecords>, key: &str) -> Arc<AppState> {
     AppState::with_options(
         store,
         records,
-        Config::default(),
+        Config {
+            // The receivers here listen on 127.0.0.1.
+            notifications: vigily_server::config::NotificationsConfig {
+                allow_private_networks: true,
+            },
+            ..Config::default()
+        },
         EngineOptions {
             auth: AuthMode::Server {
                 admin_token: ADMIN.into(),
@@ -199,6 +205,8 @@ fn alert(dedupe: &str) -> Alert {
         dedupe: dedupe.into(),
         delivered: None,
         deliveries: None,
+        experiment: None,
+        suite_name: None,
     }
 }
 
@@ -522,8 +530,10 @@ async fn each_kind_gets_its_payload_once_and_webhooks_are_signed() {
         .await
         .unwrap();
     vigily_server::delivery::dispatch(&a.state, &stored[0], &channels).await;
-    tokio::time::sleep(Duration::from_millis(200)).await;
-    // `quiet` was not queued before, so it is now; the four others are not sent again.
+    // `quiet` was not queued before, so it is now; the four others are not sent again (wait for
+    // the fifth request, then a little longer for any repeat).
+    r.wait_for(5).await;
+    tokio::time::sleep(Duration::from_millis(300)).await;
     let got = r.got();
     assert_eq!(
         got.len(),
@@ -606,19 +616,20 @@ async fn the_rate_limit_spaces_deliveries_without_using_attempts() {
                "secrets": {"url": {"value": format!("{}/x", r.url)}}}),
     )
     .await;
+    let start = Instant::now();
     let mut ids = Vec::new();
     for i in 0..3 {
         ids.push(raise(&a, &format!("data/s/{i}")).await);
     }
     let got = r.wait_for(3).await;
-    for w in got.windows(2) {
-        // 600 a minute: one every 100 ms after the burst of one.
-        assert!(
-            w[1].at - w[0].at >= Duration::from_millis(80),
-            "{:?}",
-            w[1].at - w[0].at
-        );
-    }
+    // 600 a minute after a burst of one: the third send cannot start before 200 ms. (Arrival
+    // times alone can bunch up behind a slow first connection, so measure from the start.)
+    let last = got.iter().map(|g| g.at).max().unwrap();
+    assert!(
+        last - start >= Duration::from_millis(190),
+        "{:?}",
+        last - start
+    );
     for id in ids {
         let d = settled(&a, &id).await;
         assert_eq!(d[0]["attempts"], 1);

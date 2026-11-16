@@ -10,6 +10,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
+use crate::evals::{AlertKind, Severity};
 use crate::secrets::SecretState;
 
 /// What a channel delivers to.
@@ -291,4 +292,61 @@ pub struct DeliverySummary {
     pub sent: u32,
     pub failed: u32,
     pub pending: u32,
+}
+
+/// What a routing rule matches; every field left out matches everything.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct RuleMatch {
+    /// Alert kinds: `behaviour_drift`, `data_drift`, `schedule_failed`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub kinds: Vec<AlertKind>,
+    /// `warning`, `critical`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub severities: Vec<Severity>,
+    /// A glob on the experiment (project) name: `*` any characters, `?` one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub experiment: Option<String>,
+    /// A glob on the suite's name or key.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub suite: Option<String>,
+    /// A glob on the schedule's name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub schedule: Option<String>,
+}
+
+/// A routing rule: alerts it matches go to its channels.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Rule {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(default, rename = "match")]
+    pub matches: RuleMatch,
+    /// Channel ids.
+    #[serde(default)]
+    pub channels: Vec<String>,
+    /// Stop at this rule when it matches: later rules and the default rule are skipped.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub stop: bool,
+}
+
+/// `GET notifications/rules`: the ordered rules and their version. After them, alerts go to the
+/// channels marked default unless a matching rule stops.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Rules {
+    /// 0 before the rules were first saved; each save adds one.
+    pub version: u64,
+    pub rules: Vec<Rule>,
+    /// UTC microseconds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub changed_by: Option<String>,
+}
+
+/// `PUT notifications/rules`: the whole new list and the version it was read at (409 when the
+/// rules changed since).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct RulesUpdate {
+    pub version: u64,
+    pub rules: Vec<Rule>,
 }

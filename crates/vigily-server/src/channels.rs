@@ -12,6 +12,9 @@
 //! | `DELETE /api/v1/notifications/channels/{id}`     | admin | Removes one and its secrets |
 //! | `POST /api/v1/notifications/channels/{id}/test`  | admin | Sends a test alert once |
 //! | `GET /api/v1/alerts/{id}/deliveries`             | read  | An alert's deliveries |
+//!
+//! `[alerts] webhook` in vigily.toml (deprecated) is the read-only channel `config`: a webhook
+//! channel marked default, listed with `source: config`, that the API cannot change or remove.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -52,6 +55,45 @@ pub struct ChannelRecord {
     pub updated_at: i64,
     #[serde(default)]
     pub changed_by: Option<String>,
+    /// The URL of the read-only channel from `[alerts] webhook`; never stored.
+    #[serde(skip)]
+    pub config_url: Option<String>,
+}
+
+/// The id of the channel from `[alerts] webhook`.
+pub const CONFIG_ID: &str = "config";
+
+/// The read-only channel of `[alerts] webhook`, when it is configured.
+pub fn config_channel(state: &AppState) -> Option<ChannelRecord> {
+    let url = state.config.alerts.webhook.clone()?;
+    Some(ChannelRecord {
+        id: CONFIG_ID.into(),
+        name: "[alerts] webhook (vigily.toml)".into(),
+        kind: ChannelKind::Webhook,
+        enabled: true,
+        default: true,
+        settings: ChannelSettings::default(),
+        env: BTreeMap::new(),
+        created_at: 0,
+        updated_at: 0,
+        changed_by: None,
+        config_url: Some(url),
+    })
+}
+
+/// Every channel: the configured one first, then the stored ones in id order.
+pub async fn all(state: &AppState) -> vigily_core::Result<Vec<ChannelRecord>> {
+    let mut out: Vec<ChannelRecord> = config_channel(state).into_iter().collect();
+    out.extend(list(&*state.records).await?);
+    Ok(out)
+}
+
+/// A channel by id, the configured one included.
+pub async fn find(state: &AppState, id: &str) -> vigily_core::Result<Option<ChannelRecord>> {
+    if id == CONFIG_ID {
+        return Ok(config_channel(state));
+    }
+    get_record(&*state.records, id).await
 }
 
 /// The secret store's name of a channel's secret field.
@@ -68,6 +110,18 @@ fn check_id(id: &str) -> Result<(), ApiError> {
             format!("no channel with id {id}"),
         ))
     }
+}
+
+/// Refuses changes to the channel from vigily.toml.
+fn read_only(c: &ChannelRecord) -> Result<(), ApiError> {
+    if c.config_url.is_some() {
+        return Err(ApiError::new(
+            StatusCode::CONFLICT,
+            "this channel comes from [alerts] webhook in vigily.toml and is read-only; edit or \
+             remove it there (it is deprecated: add a webhook channel instead)",
+        ));
+    }
+    Ok(())
 }
 
 fn bad(m: impl Into<String>) -> ApiError {
@@ -113,6 +167,16 @@ pub async fn secret_state(
     c: &ChannelRecord,
     field: &str,
 ) -> Result<SecretState, ApiError> {
+    if c.config_url.is_some() {
+        return Ok(if field == "url" {
+            SecretState {
+                source: "config".into(),
+                ..SecretState::default()
+            }
+        } else {
+            SecretState::none()
+        });
+    }
     if let Some(var) = c.env.get(field) {
         return Ok(SecretState::env(var));
     }
@@ -128,6 +192,9 @@ pub async fn secret_value(
     c: &ChannelRecord,
     field: &str,
 ) -> Result<Option<String>, String> {
+    if let Some(url) = &c.config_url {
+        return Ok((field == "url").then(|| url.clone()));
+    }
     if let Some(var) = c.env.get(field) {
         return match std::env::var(var).ok().filter(|v| !v.trim().is_empty()) {
             Some(v) => Ok(Some(v.trim().to_string())),
@@ -157,7 +224,11 @@ pub async fn view(state: &AppState, c: &ChannelRecord) -> Result<Channel, ApiErr
         default: c.default,
         settings: c.settings.clone(),
         secrets,
-        source: "api".into(),
+        source: if c.config_url.is_some() {
+            "config".into()
+        } else {
+            "api".into()
+        },
         created_at: c.created_at,
         updated_at: c.updated_at,
         changed_by: c.changed_by.clone(),
@@ -350,7 +421,7 @@ pub fn routes() -> Scoped {
 
 async fn list_channels(State(s): State<Arc<AppState>>) -> Result<Json<Channels>, ApiError> {
     let mut channels = Vec::new();
-    for c in list(&*s.records).await? {
+    for c in all(&s).await? {
         channels.push(view(&s, &c).await?);
     }
     channels.sort_by_key(|c| c.name.to_lowercase());
@@ -359,7 +430,7 @@ async fn list_channels(State(s): State<Arc<AppState>>) -> Result<Json<Channels>,
 
 async fn found(s: &AppState, id: &str) -> Result<ChannelRecord, ApiError> {
     check_id(id)?;
-    get_record(&*s.records, id)
+    find(s, id)
         .await?
         .ok_or_else(|| ApiError::new(StatusCode::NOT_FOUND, format!("no channel with id {id}")))
 }
@@ -411,6 +482,7 @@ async fn create(
         created_at: now,
         updated_at: now,
         changed_by: Some(ctx.principal.clone()),
+        config_url: None,
     };
     if let Err(e) = apply_secrets(&s, &mut c, &req.secrets, &ctx.principal).await {
         // Leave nothing behind of a channel that was not made.
@@ -438,6 +510,7 @@ async fn update(
         "{\"name\"?, \"enabled\"?, \"default\"?, \"settings\"?, \"secrets\"?}",
     )?;
     let mut c = found(&s, &id).await?;
+    read_only(&c)?;
     if let Some(n) = &req.name {
         let n = check_name(n)?;
         name_taken(&*s.records, &n, Some(&c.id)).await?;
@@ -478,6 +551,7 @@ async fn remove(
     Path(id): Path<String>,
 ) -> Result<Json<ChannelDeleted>, ApiError> {
     let c = found(&s, &id).await?;
+    read_only(&c)?;
     for (field, _) in c.kind.secret_fields() {
         let name = secret_name(&c.id, field);
         if s.secrets.state(&*s.records, &name).await?.is_set() {

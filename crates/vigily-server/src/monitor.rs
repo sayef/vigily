@@ -5,15 +5,8 @@
 //! detected drift raises an alert once (alerts are de-duplicated by suite, run and score or
 //! feature). Failed schedules raise alerts too (see [`crate::scheduler`]).
 //!
-//! Each new alert is queued for the enabled notification channels marked default
-//! ([`crate::delivery`]).
-//!
-//! When `alerts.webhook` is configured, each new alert is sent there as a JSON `POST`:
-//!
-//! ```json
-//! {"event": "vigily.alert", "alert": {"id": "...", "kind": "behaviour_drift", "severity": "warning",
-//!  "title": "...", "detail": "...", "suite": "...", "run_id": "...", "schedule": null, "created_at": 0}}
-//! ```
+//! Each new alert is routed to notification channels by the routing rules ([`crate::rules`]) and
+//! delivered by [`crate::delivery`]. A configured `alerts.webhook` is one of those channels.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -27,8 +20,8 @@ use crate::AppState;
 
 pub const CHECK_EVERY: Duration = Duration::from_secs(30);
 
-/// Stores an alert (once per dedupe key) and posts it to the webhook. Returns true when the alert
-/// is new.
+/// Stores an alert (once per dedupe key) and queues it for its channels. Returns true when the
+/// alert is new.
 pub async fn notify(state: &AppState, alert: Alert) -> bool {
     let stored = match evals::raise_alert(&*state.records, alert).await {
         Ok(Some(a)) => a,
@@ -39,60 +32,9 @@ pub async fn notify(state: &AppState, alert: Alert) -> bool {
         }
     };
     tracing::warn!(title = %stored.title, "alert");
-    // Queued for the notification channels marked default; the worker delivers them.
-    match crate::channels::list(&*state.records).await {
-        Ok(channels) => {
-            let to: Vec<_> = channels
-                .into_iter()
-                .filter(|c| c.enabled && c.default)
-                .collect();
-            crate::delivery::dispatch(state, &stored, &to).await;
-        }
-        Err(e) => tracing::warn!(error = %e, "could not read the notification channels"),
-    }
-    let Some(url) = state.config.alerts.webhook.clone() else {
-        return true;
-    };
-    // Delivery (with retries, up to about 40 s against an unreachable endpoint) runs on its own
-    // task, so it never holds up drift checks or the scheduler.
-    tokio::spawn(deliver(
-        state.records.clone(),
-        state.http.clone(),
-        url,
-        stored,
-    ));
+    // Queued for the channels the routing rules name; the delivery worker sends them.
+    crate::rules::dispatch(state, &stored).await;
     true
-}
-
-/// Posts an alert to the webhook, retrying twice, and records the outcome on the alert.
-async fn deliver(
-    records: Arc<dyn vigily_core::RecordStore>,
-    http: reqwest::Client,
-    url: String,
-    stored: Alert,
-) {
-    let body = serde_json::json!({ "event": "vigily.alert", "alert": stored });
-    let mut ok = false;
-    for (attempt, wait) in [0u64, 2, 10].into_iter().enumerate() {
-        tokio::time::sleep(std::time::Duration::from_secs(wait)).await;
-        match http.post(&url).json(&body).send().await {
-            Ok(r) if r.status().is_success() => {
-                ok = true;
-                break;
-            }
-            Ok(r) => {
-                tracing::warn!(status = %r.status(), attempt, "the alert webhook refused the alert")
-            }
-            Err(e) => tracing::warn!(error = %e, attempt, "could not reach the alert webhook"),
-        }
-    }
-    // Re-read before writing: the alert may have been acknowledged while it was being delivered.
-    if let Ok(Some(v)) = records.get(&format!("alert/{}", stored.id)).await {
-        if let Ok(mut current) = serde_json::from_value::<Alert>(v) {
-            current.delivered = Some(ok);
-            let _ = evals::update_alert(&*records, &current).await;
-        }
-    }
 }
 
 /// The result count each suite's newest run had when it was last checked. A run is checked again
@@ -206,6 +148,8 @@ async fn check_suite(
                 dedupe: format!("behaviour/{}/{}/{score}", suite.key, run.run_id),
                 delivered: None,
                 deliveries: None,
+                experiment: suite.experiment.clone(),
+                suite_name: Some(label.clone()),
             },
         )
         .await as usize;
@@ -245,6 +189,8 @@ async fn check_suite(
                 dedupe: format!("data/{}/{}/{}", suite.key, run.run_id, f.feature),
                 delivered: None,
                 deliveries: None,
+                experiment: suite.experiment.clone(),
+                suite_name: Some(label.clone()),
             },
         )
         .await as usize;

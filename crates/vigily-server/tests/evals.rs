@@ -533,6 +533,8 @@ async fn webhook_delivery_keeps_acknowledgements() {
         Arc::new(MemoryRecords::new()),
         config,
     );
+    // The [alerts] webhook is a channel now: the delivery worker sends to it.
+    vigily_server::delivery::start(state.clone());
     let alert = evals::Alert {
         id: String::new(),
         kind: evals::AlertKind::ScheduleFailed,
@@ -547,6 +549,8 @@ async fn webhook_delivery_keeps_acknowledgements() {
         dedupe: "schedule/nightly/1".into(),
         delivered: None,
         deliveries: None,
+        experiment: None,
+        suite_name: None,
     };
     let st = state.clone();
     let task = tokio::spawn(async move { monitor::notify(&st, alert).await });

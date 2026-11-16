@@ -32,9 +32,11 @@ pub mod engine;
 pub mod evals_api;
 pub mod monitor;
 pub mod render;
+pub mod rules;
 pub mod runs_api;
 pub mod scheduler;
 pub mod secrets;
+pub mod ssrf;
 pub mod traces_api;
 pub mod write_api;
 pub mod writers;
@@ -106,6 +108,8 @@ pub struct AppState {
     /// The address people reach the web app at, for links in notifications; the engine's own
     /// address when not given.
     pub public_url: Option<String>,
+    /// Serialises routing-rule saves (read, version check, write).
+    pub(crate) rules_lock: tokio::sync::Mutex<()>,
     /// The engine's address once it listens (`http://127.0.0.1:7600`), for scheduled commands.
     pub url: parking_lot::RwLock<Option<String>>,
     /// Wakes the background catalog refresh early (after a write).
@@ -179,6 +183,7 @@ impl AppState {
             auth: auth::Auth::new(opts.auth),
             secrets: secrets::Secrets::new(opts.secrets),
             notifier: delivery::Notifier::new(opts.delivery),
+            rules_lock: tokio::sync::Mutex::new(()),
             public_url: opts.public_url.map(|u| u.trim_end_matches('/').to_string()),
             url: parking_lot::RwLock::new(None),
             refresh_now: tokio::sync::Notify::new(),
@@ -366,6 +371,7 @@ fn v1_only(state: &Arc<AppState>) -> Scoped {
         .merge(admin_api::routes())
         .merge(secrets::routes())
         .merge(channels::routes())
+        .merge(rules::routes())
         .merge(audit::routes())
 }
 

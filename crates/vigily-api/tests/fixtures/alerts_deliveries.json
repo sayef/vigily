@@ -16,6 +16,8 @@
       "sent": 2,
       "failed": 1,
       "pending": 0
-    }
+    },
+    "experiment": "intents",
+    "suite_name": "intent-clf-v2"
   }
 ]

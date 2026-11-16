@@ -895,6 +895,8 @@ mod tests {
             dedupe: d.into(),
             delivered: None,
             deliveries: None,
+            experiment: None,
+            suite_name: None,
         };
         assert!(raise_alert(&rs, mk("x")).await.unwrap().is_some());
         assert!(raise_alert(&rs, mk("x")).await.unwrap().is_none());
@@ -978,6 +980,8 @@ mod tests {
             dedupe: d.into(),
             delivered: None,
             deliveries: None,
+            experiment: None,
+            suite_name: None,
         }
     }
 

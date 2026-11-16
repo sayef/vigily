@@ -1,7 +1,7 @@
 # Configuration and vigily.toml
 
 Most of vigily needs no configuration: the SDK and the server agree on a repository location, and
-the server serves it. A `vigily.toml` adds schedules, an alert webhook and drift thresholds.
+the server serves it. A `vigily.toml` adds schedules, drift thresholds and notification settings.
 
 ## Environment variables
 
@@ -151,7 +151,10 @@ keep_days = 90                           # and none older than this
 keep_output = 50                         # captured output kept for the newest runs
 
 [alerts]
-webhook = "https://hooks.example.com/vigily"   # optional; JSON POST per alert
+webhook = "https://hooks.example.com/vigily"   # deprecated: a read-only webhook channel
+
+[notifications]
+allow_private_networks = false           # server mode: allow webhooks to internal addresses
 
 [drift]
 alpha = 0.01                             # significance level for behaviour drift
@@ -174,6 +177,19 @@ payloads = "metadata"
 Durations take `s`, `m`, `h` and `d`. Cron expressions are evaluated in the schedule's time zone
 and stored in UTC, so a 02:00 schedule stays at 02:00 local time across daylight-saving changes;
 an expression that can never fire (such as 30 February) is rejected at start.
+
+`[alerts] webhook` still works, but is deprecated: the engine serves it as the read-only
+notification channel `config` (a webhook channel marked default, posting the `vigily.alert/1`
+[document](http-api.md#the-webhook-document), whose `event` and `alert` fields keep their earlier
+meaning), and says so at start. Add a webhook channel instead, and remove the line.
+
+`[notifications] allow_private_networks`: an engine in server mode resolves each Slack, Teams,
+Discord and webhook target and refuses to send when it points at a loopback, private (10/8,
+172.16/12, 192.168/16), shared (100.64/10), link-local (169.254/16, fe80::/10) or unique-local
+(fc00::/7) address, so channels made through the API cannot reach the engine's own network. It
+then connects to the addresses it checked and follows no redirects. Set this to `true` when
+alerts go to internal services. A local engine allows any address, and so does `[alerts]
+webhook`, which only the operator can set.
 
 See [scheduled evaluations](scheduled-evals.md) for what a schedule may run and how it is contained,
 and [drift methods](drift.md) for what `alpha` and `min_effect` control.

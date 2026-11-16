@@ -232,6 +232,12 @@ pub struct Alert {
     /// How its deliveries to notification channels stand (`GET alerts` only; never stored).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub deliveries: Option<crate::notifications::DeliverySummary>,
+    /// The experiment (project) of the suite's runs, for routing rules.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub experiment: Option<String>,
+    /// The suite's name for people (its target's model or name), for routing rules.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub suite_name: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
