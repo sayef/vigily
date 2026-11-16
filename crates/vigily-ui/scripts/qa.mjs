@@ -6,7 +6,9 @@
 //   npm run qa -- [out-dir]          # default: target/qa (not committed; see assets/src/screenshots.py)
 //
 // VIGILY_URL overrides the server (default http://127.0.0.1:7600); VIGILY_TOKEN is its token (the
-// one in the link `vigily up` prints), sent with every request. PLAYWRIGHT_CHROMIUM is a
+// one in the link `vigily up` prints), sent with every request; with the admin scope the
+// notification checks test a channel and save the routing rules (only their version changes).
+// VIGILY_READ_TOKEN, a token with only the read scope, adds the read-only checks. PLAYWRIGHT_CHROMIUM is a
 // Chromium executable to use instead of Playwright's own download.
 
 import { mkdirSync, readdirSync } from "node:fs";
@@ -51,6 +53,11 @@ const evalItems = evalRun ? ((await api(`/api/v1/runs/${evalRun}/items`).catch((
 const schedules = (await api("/api/v1/schedules").catch(() => ({ schedules: [] }))).schedules;
 const datasets = await api("/api/v1/datasets").catch(() => []);
 const traces = await api("/api/v1/traces?limit=200").catch(() => ({ rows: [] }));
+const channels = (await api("/api/v1/notifications/channels").catch(() => ({ channels: [] }))).channels ?? [];
+const apiChannel = channels.find((c) => c.source === "api");
+const configChannel = channels.find((c) => c.source === "config");
+const alertList = await api("/api/v1/alerts").catch(() => []);
+const deliveredAlert = Array.isArray(alertList) ? alertList.find((a) => a.deliveries) : undefined;
 const failedTrace = traces.rows.find((t) => t.status === "error") ?? traces.rows[0];
 const tracedRun = traces.rows.find((t) => t.run_id)?.run_id;
 
@@ -80,6 +87,11 @@ const pages = [
   tracedRun && ["traces-run", `/traces?run=${tracedRun}&range=7d`],
   cifar.length && ["compare-runs", `/metrics/compare?runs=${cifar.slice(0, 4).join(",")}`],
   ["settings", "/settings"],
+  ["notifications", "/settings/notifications"],
+  apiChannel && ["channel", `/settings/notifications/channels/${apiChannel.id}`],
+  configChannel && ["channel-config", `/settings/notifications/channels/${configChannel.id}`],
+  ["channel-new", "/settings/notifications/channels/new?kind=email"],
+  deliveredAlert && ["alert-deliveries", "/alerts?show=all"],
 ].filter(Boolean);
 const viewports = [
   ["desktop", { width: 1440, height: 900 }],
@@ -107,6 +119,11 @@ for (const theme of ["light", "dark"]) {
         const box = await c.boundingBox();
         if (box) await page.mouse.move(box.x + box.width * 0.62, box.y + box.height * 0.55);
         await page.waitForTimeout(200);
+      }
+      if (name === "alert-deliveries") {
+        await page.locator(`[aria-controls="deliveries-${deliveredAlert.id}"]`).click();
+        await page.locator(`#deliveries-${deliveredAlert.id} li`).first().waitFor();
+        await page.locator(`#deliveries-${deliveredAlert.id}`).scrollIntoViewIfNeeded();
       }
       const checks = await page.evaluate(() => {
         const overflow = document.documentElement.scrollWidth > document.documentElement.clientWidth;
@@ -269,7 +286,46 @@ for (const theme of ["light", "dark"]) {
       await check("Arrow keys select another drift run", () => new URL(page.url()).searchParams.get("run") !== before);
     } else await check("A suite with scores draws its chart", () => false);
   }
+  if (apiChannel) {
+    // Notifications: a test send shows its outcome; the rules editor validates, and a save at a
+    // stale version is refused, reloaded, and can be reapplied.
+    await page.goto(`${BASE}/settings/notifications`, { waitUntil: "networkidle" });
+    const admin = (await page.getByRole("link", { name: "Add a channel" }).count()) > 0;
+    if (admin) {
+      await page.getByRole("button", { name: "Test" }).first().click();
+      await check("Test shows the outcome", () => page.getByRole("status").filter({ hasText: /Test (alert sent|failed)/ }).first().waitFor({ timeout: 20_000 }).then(() => true));
+      await page.getByRole("button", { name: "Edit the rules" }).click();
+      await page.getByRole("button", { name: "Add a rule" }).click();
+      await check("A rule that sends nowhere is refused", () => page.getByRole("alert").filter({ hasText: /sends nowhere/ }).isVisible());
+      const added = page.locator("form[aria-labelledby=rules-h] li").last();
+      await added.getByRole("button", { name: /^Remove / }).click();
+      const rules = await api("/api/v1/notifications/rules");
+      const bump = await fetch(`${BASE}/api/v1/notifications/rules`, { method: "PUT", headers: { ...AUTH, "content-type": "application/json" }, body: JSON.stringify({ version: rules.version, rules: rules.rules }) });
+      await check("The rules can be saved over the API", () => bump.ok);
+      await page.getByRole("button", { name: "Save the rules" }).click();
+      await check("A stale save says the rules changed", () => page.getByText(/Someone saved the rules/).waitFor({ timeout: 5000 }).then(() => true));
+      await page.getByRole("button", { name: "Edit again with my changes" }).click();
+      await page.getByRole("button", { name: "Save the rules" }).click();
+      await check("Reapplied changes save", () => page.getByText(/Routing rules saved/).waitFor({ timeout: 5000 }).then(() => true));
+      await page.goto(`${BASE}/settings/notifications/channels/new?kind=webhook`, { waitUntil: "networkidle" });
+      await page.getByRole("button", { name: "Add the channel" }).click();
+      await check("An incomplete channel is refused before sending", () => page.getByRole("alert").filter({ hasText: /name/ }).isVisible());
+    } else keys.push({ check: "Notification editing", ok: true, skipped: "VIGILY_TOKEN has no admin scope" });
+  }
   report.push({ file: "keyboard", checks: keys });
+  await ctx.close();
+}
+
+if (process.env.VIGILY_READ_TOKEN) {
+  const ctx = await browser.newContext({ extraHTTPHeaders: { authorization: `Bearer ${process.env.VIGILY_READ_TOKEN}` }, viewport: { width: 1440, height: 900 } });
+  const page = await ctx.newPage();
+  const ro = [];
+  await page.goto(`${BASE}/settings/notifications`, { waitUntil: "networkidle" });
+  ro.push({ check: "Read-only users see the channels", ok: (await page.getByRole("row").count()) > 1 || (await page.getByText("No channels yet.").count()) > 0 });
+  ro.push({ check: "Read-only users get no edit controls", ok: (await page.getByRole("link", { name: "Add a channel" }).count()) === 0 && (await page.getByRole("button", { name: "Test" }).count()) === 0 });
+  ro.push({ check: "The page says why", ok: (await page.getByText(/needs a token with the admin scope/).count()) > 0 });
+  await page.screenshot({ path: join(OUT, "notifications-readonly-desktop-light.png") });
+  report.push({ file: "read-only", checks: ro });
   await ctx.close();
 }
 
