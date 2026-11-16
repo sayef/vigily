@@ -524,7 +524,14 @@ export interface Alert {
   schedule: string | null;
   created_at: number;
   acknowledged_at: number | null;
+  /** Whether the deprecated `[alerts] webhook` accepted it; null when there is none. */
   delivered: boolean | null;
+  /** Deliveries to notification channels by status; absent when the alert was routed nowhere. */
+  deliveries?: DeliverySummary;
+  /** The experiment (project) of the alert's run. */
+  experiment?: string;
+  /** The suite's name, when the alert is about a suite. */
+  suite_name?: string;
 }
 
 const enc = encodeURIComponent;
@@ -553,6 +560,170 @@ export const evalApi = {
     request<DataDriftResponse>("GET", `/api/v1/suites/${enc(key)}/data-drift${run ? `?run=${enc(run)}` : ""}`, undefined, signal),
   alerts: (signal?: AbortSignal) => request<Alert[]>("GET", "/api/v1/alerts", undefined, signal),
   ackAlert: (id: string, acknowledged: boolean) => request<Alert>("POST", `/api/v1/alerts/${enc(id)}`, { acknowledged }),
+  deliveries: (id: string, signal?: AbortSignal) => request<Deliveries>("GET", `/api/v1/alerts/${enc(id)}/deliveries`, undefined, signal),
+};
+
+/** Where a secret comes from and what can be shown about it; never its value. */
+export interface SecretState {
+  /** `stored`, `env:<NAME>`, `config` (the `[alerts] webhook` URL) or `none`. */
+  source: string;
+  /** `…` and the last four characters of a stored value of at least eight characters. */
+  hint?: string;
+  changed_by?: string;
+  changed_at?: number;
+  /** Neither the current nor the previous key decrypts the stored value. */
+  undecryptable?: boolean;
+}
+
+/** `GET /api/v1/secrets`: the encryption key's status and the stored secrets. */
+export interface SecretsStatus {
+  key: "env" | "file" | "none";
+  previous_key: boolean;
+  /** Whether values can be stored; without a key only `env:NAME` references work. */
+  can_store: boolean;
+  /** Why values cannot be stored and how to fix it. */
+  message?: string;
+  secrets: ({ name: string } & SecretState)[];
+}
+
+export type ChannelKind = "slack" | "teams" | "discord" | "webhook" | "email";
+export type SmtpSecurity = "starttls" | "tls" | "none";
+
+/** A channel's settings that are not secret; fields that do not apply to its kind are left out. */
+export interface ChannelSettings {
+  host?: string;
+  port?: number;
+  security?: SmtpSecurity;
+  username?: string;
+  from?: string;
+  to?: string[];
+  /** Messages sent at once before the per-minute rate applies (5 when left out). */
+  burst?: number;
+  /** Messages per minute after the burst (20 when left out). */
+  per_minute?: number;
+}
+
+export type DeliveryStatus = "pending" | "sent" | "failed";
+
+/** One alert's delivery to one channel, or a test send (`alert_id` `test`). */
+export interface Delivery {
+  alert_id: string;
+  channel_id: string;
+  channel_name: string;
+  kind: ChannelKind;
+  status: DeliveryStatus;
+  attempts: number;
+  /** HTTP status, or the SMTP reply code for e-mail. */
+  status_code?: number;
+  /** Why the last attempt failed, without secrets. */
+  error?: string;
+  created_at: number;
+  updated_at: number;
+  next_attempt_at?: number;
+}
+
+export interface Deliveries {
+  deliveries: Delivery[];
+}
+
+export interface DeliverySummary {
+  sent: number;
+  failed: number;
+  pending: number;
+}
+
+export interface Channel {
+  id: string;
+  name: string;
+  kind: ChannelKind;
+  enabled: boolean;
+  /** Whether the default routing rule sends alerts here. */
+  default: boolean;
+  settings: ChannelSettings;
+  /** Each secret field of the kind with its state. */
+  secrets: Record<string, SecretState>;
+  /** `api`, or `config` for the read-only channel of `[alerts] webhook` in vigily.toml. */
+  source: "api" | "config";
+  created_at: number;
+  updated_at: number;
+  changed_by?: string;
+  last_delivery?: Delivery;
+}
+
+/** A secret field in a request: a value to store (empty removes it) or an engine environment variable. */
+export type SecretInput = { value: string } | { env: string };
+
+export interface NewChannel {
+  name: string;
+  kind: ChannelKind;
+  enabled: boolean;
+  default: boolean;
+  settings: ChannelSettings;
+  secrets: Record<string, SecretInput>;
+}
+
+export type ChannelPatch = Partial<Omit<NewChannel, "kind">>;
+
+/** The outcome of one attempt to send a test alert. */
+export interface TestResult {
+  ok: boolean;
+  status_code?: number;
+  error?: string;
+  duration_ms: number;
+}
+
+export type AlertKind = Alert["kind"];
+export type Severity = Alert["severity"];
+
+/** What a routing rule matches; every field left out matches everything. */
+export interface RuleMatch {
+  kinds?: AlertKind[];
+  severities?: Severity[];
+  /** Globs: `*` any characters, `?` one. */
+  experiment?: string;
+  suite?: string;
+  schedule?: string;
+}
+
+export interface Rule {
+  name?: string;
+  match: RuleMatch;
+  /** Channel ids. */
+  channels: string[];
+  /** Skip later rules and the default rule when this one matches. */
+  stop?: boolean;
+}
+
+export interface Rules {
+  /** 0 before the rules were first saved; each save adds one. */
+  version: number;
+  rules: Rule[];
+  updated_at?: number;
+  changed_by?: string;
+}
+
+/** The secret fields of each kind and whether each is required (`ChannelKind::secret_fields`). */
+export const SECRET_FIELDS: Record<ChannelKind, [string, boolean][]> = {
+  slack: [["webhook_url", true]],
+  teams: [["webhook_url", true]],
+  discord: [["webhook_url", true]],
+  webhook: [
+    ["url", true],
+    ["signing_key", false],
+  ],
+  email: [["password", false]],
+};
+
+export const notifyApi = {
+  secrets: (signal?: AbortSignal) => request<SecretsStatus>("GET", "/api/v1/secrets", undefined, signal),
+  channels: (signal?: AbortSignal) => request<{ channels: Channel[] }>("GET", "/api/v1/notifications/channels", undefined, signal),
+  channel: (id: string, signal?: AbortSignal) => request<Channel>("GET", `/api/v1/notifications/channels/${enc(id)}`, undefined, signal),
+  createChannel: (c: NewChannel) => request<Channel>("POST", "/api/v1/notifications/channels", c),
+  updateChannel: (id: string, p: ChannelPatch) => request<Channel>("PATCH", `/api/v1/notifications/channels/${enc(id)}`, p),
+  deleteChannel: (id: string) => request<{ deleted: boolean }>("DELETE", `/api/v1/notifications/channels/${enc(id)}`),
+  testChannel: (id: string) => request<TestResult>("POST", `/api/v1/notifications/channels/${enc(id)}/test`, {}),
+  rules: (signal?: AbortSignal) => request<Rules>("GET", "/api/v1/notifications/rules", undefined, signal),
+  setRules: (version: number, rules: Rule[]) => request<Rules>("PUT", "/api/v1/notifications/rules", { version, rules }),
 };
 
 /** How much of a span's inputs and outputs the project stores. */
