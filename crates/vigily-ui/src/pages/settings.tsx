@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { DOCS_URL } from "@/components/layout";
+import { SettingsNav } from "@/components/notifications";
 import { PageHeader, SectionHead, ToolSwitch } from "@/components/page";
 import { ShortcutsDialog } from "@/components/shortcuts";
 import { useTheme } from "@/components/theme";
@@ -19,8 +20,9 @@ export function SettingsPage() {
   const row = "grid gap-1 border-b py-3 sm:grid-cols-[200px_minmax(0,1fr)] sm:gap-6";
   return (
     <div className="px-4 pb-16 pt-5 md:px-6">
+      <SettingsNav />
       <PageHeader title="Settings">
-        <span>Server settings (schedules, drift thresholds, alert delivery) are read from its configuration file at start.</span>
+        <span>Schedules and drift thresholds are read from the server's configuration file at start. Alert channels and routing are under Notifications.</span>
       </PageHeader>
 
       <SectionHead id="ws-h" title="Workspace" />

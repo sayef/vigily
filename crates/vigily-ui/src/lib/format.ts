@@ -52,6 +52,15 @@ export function ago(micros: number | null | undefined, now = Date.now()): string
   return date(micros);
 }
 
+/** How long until a future time: "in 40 s", "in 3 min"; "now" once it has passed. */
+export function until(micros: number, now = Date.now()): string {
+  const s = (micros / 1000 - now) / 1000;
+  if (s <= 1) return "now";
+  if (s < 90) return `in ${Math.round(s)}\u00a0s`;
+  if (s < 5400) return `in ${Math.round(s / 60)}\u00a0min`;
+  return `in ${Math.round(s / 3600)}\u00a0h`;
+}
+
 const dateFmt = new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short", year: "numeric" });
 const dateTimeFmt = new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
 
