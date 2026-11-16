@@ -31,7 +31,17 @@ advisory unless you prefer otherwise.
 - Command output (up to 64 KiB per stream) is kept for the newest runs and shown in the web app; it
   may contain secrets a command prints. With `--insecure-no-auth`, vigily warns at start that it
   serves without sign-in.
-- Alert webhooks receive alert titles and details, which name targets, scores and schedules.
+- Notification channels (Slack, Teams, Discord, webhooks, e-mail) receive alert titles and
+  details, which name targets, scores and schedules, and a link into the web app. Their secrets
+  (webhook URLs, signing keys, SMTP passwords) are write-only: they are stored in the repository
+  encrypted with XChaCha20-Poly1305 under a key derived from `VIGILY_SECRET_KEY`, each bound to its
+  name, or read from the engine's environment when sending; no API answer, page, command output or
+  log shows a value, and delivery errors name only the target's scheme, host and port. The
+  `vigily` command reads values from a prompt without echo or from standard input, never from
+  arguments. A server-mode engine refuses to store values without the key, and refuses webhook
+  targets on loopback, private, link-local and unique-local addresses unless
+  `[notifications] allow_private_networks` is set. Changes to channels, secrets and routing rules
+  are recorded with who made them. See docs/guides/notifications.md.
 - The repository is trusted: vigily reads whatever kv0 reads at the configured location, with
   the credentials of the process.
 - The Python SDK records the Python version, platform, CPU count, vigily version and git branch and

@@ -43,13 +43,25 @@ All notable changes to vigily are documented here. The format follows
 - An audit trail of configuration changes (`GET /api/v1/audit`, admin): who changed which secret
   or channel, never the value. `GET /api/v1/info` lists the `secrets`, `audit` and `notifications`
   capabilities.
+- Web app: Settings → Notifications lists the channels with their secrets' state, routing and
+  last delivery, sends test alerts (showing the status code and error), adds and edits channels of
+  every kind with write-only secret fields (keep, new value, environment variable, remove), deletes
+  them after confirmation, and edits the routing rules (reorder, match fields, channels, stop),
+  recovering from a concurrent save. Users without the admin scope see it read-only. The Alerts
+  page shows each alert's experiment, suite and delivery summary, with the delivery log per
+  channel.
+- `vigily channels list|add|edit|remove|test`, `vigily rules list|show|set FILE` (TOML or JSON,
+  with the version check) and `vigily secrets status`. Secret values are read from a prompt without
+  echo or from standard input (`--stdin`), never from arguments.
+- docs/guides/notifications.md: each channel kind's setup, webhook signature checks, routing rules,
+  the encryption key and its rotation (also with Docker secrets), and internal-address refusal.
 
 ### Deprecated
 
 - `[alerts] webhook` in vigily.toml: it keeps working as the read-only notification channel
   `config` (marked default, posting the `vigily.alert/1` document, whose `event` and `alert`
   fields are as before), and the engine notes the deprecation at start. Add a webhook channel
-  instead.
+  instead: `vigily channels add NAME --kind webhook --default`.
 
 ## [0.1.0-beta.1](https://github.com/sayef/vigily/releases/tag/v0.1.0-beta.1) - 2026-11-15
 

@@ -6,6 +6,7 @@
 //! the foreground. The commands are functions taking a client and the streams to write to, so
 //! tests run them against an engine in the same process.
 
+pub mod notify;
 pub mod render;
 pub mod sync;
 
@@ -114,6 +115,22 @@ pub enum Command {
     Token {
         #[command(subcommand)]
         action: TokenAction,
+    },
+    /// Notification channels alerts are sent to: Slack, Microsoft Teams, Discord, webhooks and
+    /// e-mail.
+    Channels {
+        #[command(subcommand)]
+        action: notify::ChannelsAction,
+    },
+    /// Routing rules: which alerts go to which channels.
+    Rules {
+        #[command(subcommand)]
+        action: notify::RulesAction,
+    },
+    /// The encryption key of stored secrets and the state of each secret.
+    Secrets {
+        #[command(subcommand)]
+        action: notify::SecretsAction,
     },
 }
 
@@ -306,6 +323,17 @@ pub async fn run(cli: Cli) -> Result<ExitCode> {
         Command::Token {
             action: TokenAction::Rotate,
         } => rotate_token(&c, out).await,
+        Command::Channels { action } => {
+            let stdin = match action {
+                notify::ChannelsAction::Add { secrets, .. }
+                | notify::ChannelsAction::Edit { secrets, .. } => secrets.stdin,
+                _ => false,
+            };
+            let mut read = notify::secret_reader(stdin);
+            notify::channels(&c, out, action, &mut read).await
+        }
+        Command::Rules { action } => notify::rules(&c, out, action).await,
+        Command::Secrets { action } => notify::secrets(&c, out, action).await,
     };
     code
 }

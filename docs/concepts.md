@@ -69,7 +69,8 @@ compared with a **baseline**: runs you pin, or the last seven runs that did not 
 
 An **alert** is raised once per drifted run and score or feature, and once per scheduled run whose
 last attempt failed. Alerts appear in the web app with a count in the navigation, and routing
-rules send them to notification channels (Slack, Microsoft Teams, Discord, webhooks, e-mail). You
+rules send them to [notification channels](guides/notifications.md) (Slack, Microsoft Teams,
+Discord, webhooks, e-mail). You
 acknowledge them in the app; the alert keeps its deliveries and the run it points to.
 
 ## Traces

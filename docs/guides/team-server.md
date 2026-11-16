@@ -10,6 +10,7 @@ From a checkout of this repository, or any directory holding a copy of `compose.
 
 ```bash
 echo "VIGILY_ADMIN_TOKEN=$(openssl rand -hex 32)" > .env    # keep it: it opens everything
+echo "VIGILY_SECRET_KEY=$(openssl rand -hex 32)" >> .env    # encrypts stored alert secrets
 chmod 600 .env
 docker compose up -d --wait
 ```
@@ -19,6 +20,13 @@ to start without `VIGILY_ADMIN_TOKEN` (at least 16 characters, read from the env
 stored; `VIGILY_ADMIN_TOKEN_FILE` names a file holding it, for Docker secrets). The repository and
 an optional `vigily.toml` live in the `vigily` volume under `/data`, owned by the image's
 unprivileged user (uid 10001).
+
+`VIGILY_SECRET_KEY` encrypts the secrets of notification channels (webhook URLs, signing keys,
+SMTP passwords) stored in the repository. It is optional: without it the engine starts, refuses
+to store secret values, and channels read their secrets from the engine's environment
+(`env:NAME`). Keep it with the admin token and back it up: stored values cannot be read without
+it. `VIGILY_SECRET_KEY_FILE` names a file instead, for Docker secrets, and
+`VIGILY_SECRET_KEY_PREVIOUS` is for [rotating it](notifications.md#the-encryption-key).
 
 Compose publishes the port on `127.0.0.1:7600` only (`VIGILY_HOST_PORT` changes the port). Keep it
 that way and put a reverse proxy with TLS in front ([below](#tls-with-a-reverse-proxy)).
@@ -61,6 +69,23 @@ VIGILY_URL=http://localhost:7600 VIGILY_TOKEN=vgy_... python train.py
 
 People sign in to the web app with a token of their own. Labels and the audit trail record which
 token entered what (`token:<name>`), so name tokens after people or jobs.
+
+## Alert channels
+
+Add notification channels from a workstation with an admin token, or in the web app under
+Settings → Notifications:
+
+```bash
+vigily channels add ml-alerts --kind slack --default   # asks for the webhook URL, not shown
+vigily channels test ml-alerts
+```
+
+Set `VIGILY_PUBLIC_URL` in the service's environment to the address people open (the proxy's
+`https://vigily.example.com`), so links in messages lead there and not to the container's address.
+A server-mode engine refuses webhook targets on internal addresses; set
+`allow_private_networks = true` under `[notifications]` in the volume's `vigily.toml` when alerts go
+to internal services. [Alert notifications](notifications.md) covers each kind, routing rules and
+the encryption key.
 
 ## Scripts in containers
 
@@ -138,7 +163,8 @@ To restore, stop the engine, empty the volume and unpack the archive into it the
 (`tar xzf ... -C /data`), then start it again. A repository on object storage (`VIGILY_REPO` set to
 an `s3://`, `gs://` or `az://` URI in the service's environment) is backed up with bucket
 versioning instead. [Backups and data protection](storage.md#backups-and-data-protection) covers
-what the repository holds.
+what the repository holds. Stored channel secrets are in the archive encrypted; keep
+`VIGILY_SECRET_KEY` with it (separately), or they cannot be read after a restore.
 
 ## Upgrades
 

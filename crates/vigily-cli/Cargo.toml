@@ -25,9 +25,13 @@ anyhow.workspace = true
 clap.workspace = true
 # `vigily sync` reads the Python SDK's spool: gzip-compressed NDJSON.
 flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+# Secret values for `vigily channels` are asked for on the terminal without echo.
+rpassword = "7"
 serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
+# `vigily rules show|set` reads and writes the routing rules as TOML.
+toml.workspace = true
 
 [dev-dependencies]
 # Tests run the commands against an engine in the same process.

@@ -101,8 +101,9 @@ directory. Releases are published as pre-releases, which `latest` does not serve
 
 `vigily up` runs the engine in the foreground and prints a link that signs the browser in;
 `vigily open` opens the web app of an engine that is already running, `vigily runs` lists runs,
-and `vigily tokens create` makes tokens for scripts and people on a shared engine (see the
-[command line guide](docs/guides/cli.md)).
+`vigily tokens create` makes tokens for scripts and people on a shared engine, and
+`vigily channels add` sends alerts to Slack, Microsoft Teams, Discord, a webhook or e-mail (see the
+[command line guide](docs/guides/cli.md) and [alert notifications](docs/guides/notifications.md)).
 
 ### Build from source
 

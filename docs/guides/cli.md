@@ -14,6 +14,9 @@ vigily schedules          list the engine's schedules, or run one now
 vigily optimize           compact storage and build the metrics index
 vigily tokens             list, create or revoke access tokens
 vigily token rotate       replace the local engine's token
+vigily channels           list, add, edit, remove or test notification channels
+vigily rules              list, show or set the alert routing rules
+vigily secrets status     the encryption key and the state of every secret
 ```
 
 `vigily` is a client: every command but `up` talks to the engine that serves the repository over
@@ -176,6 +179,50 @@ Access tokens carry the scopes `read`, `ingest` and `admin` (see [Tokens](config
 `create` prints the token once. An SDK or script that logs runs needs `read` and `ingest`.
 `token rotate` replaces a local engine's own token: the old link, cookie and exported
 `VIGILY_TOKEN` stop working, and the new link is printed.
+
+## vigily channels
+
+```bash
+vigily channels list
+vigily channels add ml-alerts --kind slack --default          # asks for webhook_url, not shown
+vigily channels add bridge --kind webhook --secret signing_key   # asks for url and signing_key
+vigily channels add ml-alerts --kind slack --env webhook_url=SLACK_WEBHOOK_URL
+printf '%s\n' "$URL" | vigily channels add ml-alerts --kind slack --stdin
+vigily channels edit ml-alerts --per-minute 10 --default false
+vigily channels edit bridge --secret url --remove-secret signing_key
+vigily channels test ml-alerts
+vigily channels remove bridge
+```
+
+Notification channels of the kinds `slack`, `teams`, `discord`, `webhook` and `email`
+([Alert notifications](notifications.md) has the setup of each). Channels are named by id or name.
+Secret values are never arguments: `add` asks for the required one without echo, `--secret FIELD`
+asks for another, and `--stdin` reads them from standard input instead, one line per value in the
+order `webhook_url` or `url`, `signing_key`, `password`. `--env FIELD=NAME` makes the engine read a
+secret from its own environment variable instead of storing it. Output shows a secret only as its
+state (`stored …abcd`, `env NAME`, `not set`). E-mail channels take `--host`, `--port`,
+`--security starttls|tls|none`, `--username`, `--from` and `--to` (repeat it); every kind takes
+`--burst` and `--per-minute`. `edit` changes only what it is given. `test` sends one test alert
+and exits 1 when it fails, with the reason. Changing channels needs an admin token.
+
+## vigily rules
+
+```bash
+vigily rules list
+vigily rules show > rules.toml         # or --json
+vigily rules set rules.toml            # TOML, or JSON for a .json file; - reads standard input
+```
+
+`show` writes the routing rules with their version and channel names; `set` replaces the rules
+with a file's. When the file has a version and the rules were saved since, nothing is saved and
+the command says so. See [Routing rules](notifications.md#routing-rules).
+
+## vigily secrets status
+
+Prints where the encryption key comes from (`VIGILY_SECRET_KEY`, a key the local engine generated,
+or none, with how to set one), whether a previous key is set for rotation, and each channel
+secret's state, who changed it and when. Values are never printed; undecryptable ones are flagged
+([The encryption key](notifications.md#the-encryption-key)).
 
 ## vigily optimize
 
