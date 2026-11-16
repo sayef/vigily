@@ -616,19 +616,20 @@ async fn the_rate_limit_spaces_deliveries_without_using_attempts() {
                "secrets": {"url": {"value": format!("{}/x", r.url)}}}),
     )
     .await;
+    let start = Instant::now();
     let mut ids = Vec::new();
     for i in 0..3 {
         ids.push(raise(&a, &format!("data/s/{i}")).await);
     }
     let got = r.wait_for(3).await;
-    for w in got.windows(2) {
-        // 600 a minute: one every 100 ms after the burst of one.
-        assert!(
-            w[1].at - w[0].at >= Duration::from_millis(80),
-            "{:?}",
-            w[1].at - w[0].at
-        );
-    }
+    // 600 a minute after a burst of one: the third send cannot start before 200 ms. (Arrival
+    // times alone can bunch up behind a slow first connection, so measure from the start.)
+    let last = got.iter().map(|g| g.at).max().unwrap();
+    assert!(
+        last - start >= Duration::from_millis(190),
+        "{:?}",
+        last - start
+    );
     for id in ids {
         let d = settled(&a, &id).await;
         assert_eq!(d[0]["attempts"], 1);
