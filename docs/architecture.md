@@ -95,8 +95,9 @@ Evaluation endpoints (`evals_api.rs`): `GET /api/v1/datasets`, `GET /api/v1/data
 (NDJSON, one item per line), `GET /api/v1/runs/{id}/results` and `POST /api/v1/schedules/{name}/run`
 (202 with the first attempt's id, followed at `GET /api/v1/schedules/{name}/runs/{id}`; 409 while
 the schedule is running). The scheduler
-(`scheduler.rs`), drift monitor and webhook (`monitor.rs`) and the configuration file (`config.rs`)
-start with `serve()`.
+(`scheduler.rs`), drift monitor (`monitor.rs`), notification channels, routing and delivery
+(`channels.rs`, `rules.rs`, `delivery.rs`, `render.rs`, `ssrf.rs`), secrets (`secrets.rs`) and the
+configuration file (`config.rs`) start with `serve()`.
 
 Tracing endpoints (`traces_api.rs`, model and storage in `vigily-core/src/traces.rs`):
 `POST /api/v1/traces/ingest`, `POST /v1/traces` (OTLP/HTTP JSON), `GET /api/v1/traces?run=&model=&status=&since=&until=&q=`,

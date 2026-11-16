@@ -148,14 +148,30 @@ never the value. E-mail settings are `host`, `port` (587, 465 or 25 by default),
 (`starttls`, `tls` or `none`), `username`, `from` and `to` (a list); every kind takes `burst` and
 `per_minute` (5 and 20 by default), its rate limit.
 
+### Routing rules
+
+| Method and path | Scope | Answer |
+|---|---|---|
+| `GET /api/v1/notifications/rules` | read | `{version, rules, updated_at?, changed_by?}` |
+| `PUT /api/v1/notifications/rules` | admin | `{version, rules}` → the saved rules with the next version; 409 `conflict` when they changed since `version` |
+
+Each rule is `{name?, match: {kinds?, severities?, experiment?, suite?, schedule?}, channels,
+stop?}`. `kinds` are alert kinds (`behaviour_drift`, `data_drift`, `schedule_failed`),
+`severities` are `warning` and `critical`, and `experiment`, `suite` (its name or key) and
+`schedule` are glob patterns (`*` any characters, `?` one); a field left out matches every alert.
+Every matching rule adds its channels; after the list, the alert also goes to every channel marked
+`default`, unless a matching rule has `stop: true`. Disabled channels get nothing. A configured
+`[alerts] webhook` is the read-only channel `config` (`source: config`): rules can name it, and
+`PATCH` and `DELETE` answer 409.
+
 `GET /api/v1/alerts` adds `deliveries: {sent, failed, pending}` to each alert that was queued for
-a channel. A delivery is retried after no answer, a 5xx, 408 or 429 (five attempts over about eight
+a channel, and `experiment` and `suite_name` to alerts of a suite. A delivery is retried after no answer, a 5xx, 408 or 429 (five attempts over about eight
 minutes, with exponential backoff and jitter); any other answer fails it. Each alert goes to each
 channel once.
 
 ### The webhook document
 
-A `webhook` channel posts this JSON document (`Content-Type: application/json`). Its `schema` is
+A `webhook` channel (and `[alerts] webhook`) posts this JSON document (`Content-Type: application/json`). Its `schema` is
 `vigily.alert/1`; fields are only ever added within it.
 
 ```json

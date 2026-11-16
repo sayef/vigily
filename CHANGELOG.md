@@ -32,9 +32,24 @@ All notable changes to vigily are documented here. The format follows
   log (`GET /api/v1/alerts/{id}/deliveries`; `GET /api/v1/alerts` adds a summary per alert).
   Pending deliveries survive a restart. `POST /api/v1/notifications/channels/{id}/test` sends a
   test alert and reports what happened.
+- Routing rules (`GET`/`PUT /api/v1/notifications/rules`): an ordered list matching alerts by
+  kind, severity and glob patterns on the experiment, suite and schedule, each naming channels;
+  alerts also go to the channels marked default unless a matching rule stops. Saves carry the
+  version they were read at and answer 409 when the rules changed since. Drift alerts and failed
+  schedules are all routed by them; alerts of a suite carry its `experiment` and `suite_name`.
+- In server mode, webhook, Slack, Teams and Discord targets are resolved and refused when they
+  point at loopback, private, link-local or unique-local addresses, unless `[notifications]
+  allow_private_networks = true`; local engines allow any address.
 - An audit trail of configuration changes (`GET /api/v1/audit`, admin): who changed which secret
   or channel, never the value. `GET /api/v1/info` lists the `secrets`, `audit` and `notifications`
   capabilities.
+
+### Deprecated
+
+- `[alerts] webhook` in vigily.toml: it keeps working as the read-only notification channel
+  `config` (marked default, posting the `vigily.alert/1` document, whose `event` and `alert`
+  fields are as before), and the engine notes the deprecation at start. Add a webhook channel
+  instead.
 
 ## [0.1.0-beta.1](https://github.com/sayef/vigily/releases/tag/v0.1.0-beta.1) - 2026-11-15
 
