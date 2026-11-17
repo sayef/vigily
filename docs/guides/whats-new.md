@@ -1,12 +1,35 @@
-# What's new in 0.1.0-beta.1
+# What's new
 
+## 0.1.0-beta.2: alert notifications
+
+Alerts now reach people where they work. Each engine keeps several named notification channels:
+Slack, Microsoft Teams, Discord, a generic webhook (signed with HMAC-SHA256 so the receiver can
+check it came from vigily) and e-mail over SMTP. Routing rules decide which alerts go to which
+channels by kind, severity and experiment, suite or schedule name. Deliveries are retried, rate
+limited per channel and logged per alert. Channels, rules and secrets are managed in the web app
+(Settings → Notifications) and with `vigily channels`, `vigily rules` and `vigily secrets`.
+See [Alert notifications](notifications.md).
+
+What to do when upgrading:
+
+- **Team servers:** set `VIGILY_SECRET_KEY` (or `VIGILY_SECRET_KEY_FILE`) before starting the new
+  version. Channel secrets such as webhook URLs and SMTP passwords are stored encrypted with it; keep
+  the key with your backups. Without it the engine still starts but refuses to store secret values.
+  A laptop engine generates its own key.
+- **`[alerts] webhook` in vigily.toml** keeps working as a read-only channel named `config`, but it
+  is deprecated: add the same URL with `vigily channels add NAME --kind webhook` and remove the
+  setting.
+- **Webhook targets on internal addresses** are refused on a team server unless
+  `[notifications] allow_private_networks = true` is set.
+
+## 0.1.0-beta.1: one engine, thin clients
 In 0.1.0-beta.1 one process, the engine (`vigily-engine`), owns a repository's storage. The web
 app, the `vigily` command and the Python SDK are its clients and talk to it over HTTP. Before, the
 SDK wrote to storage inside the training process, and `vigily up` served the same files. This page
 lists what changes for each kind of user. Repositories open unchanged: there is no storage format
 change and nothing to migrate.
 
-## Python SDK
+### Python SDK
 
 - **Install.** `pip install vigily` is now a pure-Python wheel of about 60 kB with no
   dependencies, instead of an 80 MB native extension. On a laptop, `pip install 'vigily[local]'`
@@ -34,7 +57,7 @@ New: `vigily.configure(url, token, project, offline)`, `vigily.flush(timeout)`, 
 `Repo.results(run_id)` and `vigily.tracing.export(spans)`. The environment variables are listed in
 the [Python SDK guide](python-sdk.md).
 
-## Command line
+### Command line
 
 - **`vigily up` runs the engine** (`vigily-engine`) in the foreground with the same options. The
   release archive and the install script install both binaries.
@@ -49,7 +72,7 @@ the [Python SDK guide](python-sdk.md).
   address, token and log live in the state directory (`~/.cache/vigily`, or
   `~/Library/Caches/vigily` on macOS; `VIGILY_STATE_DIR`).
 
-## Sign-in and tokens
+### Sign-in and tokens
 
 Every request now needs a token (except health, info and `auth/me`).
 
@@ -60,7 +83,7 @@ Every request now needs a token (except health, info and `auth/me`).
   `VIGILY_ADMIN_TOKEN`. Create tokens for people and scripts with `vigily tokens create NAME
   --scope read --scope ingest`; `ingest` alone cannot read. See [Tokens](configuration.md#tokens).
 
-## Docker
+### Docker
 
 - The image's entry point is `vigily-engine`, and its command `--host 0.0.0.0 --mode server`. If
   you passed arguments to the old `vigily up` entry point, pass engine options instead (for
@@ -85,7 +108,7 @@ Every request now needs a token (except health, info and `auth/me`).
   ```
 - `docker stop` now shuts the engine down cleanly; Compose gives it 30 seconds.
 
-## HTTP API clients
+### HTTP API clients
 
 - **Routes move to `/api/v1`.** The old `/api/...` paths still answer as aliases, with a
   `Deprecation: true` header and a `Link` to the new path. **They will be removed before 0.1.0**;
@@ -97,7 +120,7 @@ Every request now needs a token (except health, info and `auth/me`).
   tokens and storage administration. The [HTTP API reference](http-api.md) lists them with their
   scopes.
 
-## Older SDKs next to an engine
+### Older SDKs next to an engine
 
 An SDK from an earlier development build still writes to storage directly. It can keep doing so next to a
 running engine, which picks up its runs on the next refresh, but this is deprecated: upgrade the

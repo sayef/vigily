@@ -102,7 +102,7 @@ nav:
       - Self-hosting and storage: guides/storage.md
       - Running a team server: guides/team-server.md
       - HTTP API: guides/http-api.md
-      - What's new in 0.1.0-beta.1: guides/whats-new.md
+      - What's new: guides/whats-new.md
       - The audit trail: guides/audit-trail.md
   - Design:
       - Brand: design/brand.md
