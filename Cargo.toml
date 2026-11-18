@@ -31,7 +31,7 @@ kv0 = { git = "https://github.com/sayef/kv0", branch = "main", version = "0.1.0-
 # Only in tests, to write a shared records table the way earlier builds did; the same versions
 # kv0 uses, so nothing extra is compiled.
 lance = { version = "14.0.2", default-features = false }
-arrow-array = "58"
+arrow-array = "60"
 anyhow = "1"
 async-trait = "0.1"
 axum = { version = "0.8", default-features = false, features = ["http1", "json", "query", "tokio", "matched-path"] }
