@@ -11,7 +11,7 @@ members = [
 [workspace.package]
 version = "0.1.0-beta.2"
 edition = "2021"
-rust-version = "1.94.1"
+rust-version = "1.95"
 license = "MIT"
 authors = ["Saiful Islam"]
 repository = "https://github.com/sayef/vigily"
@@ -22,16 +22,12 @@ vigily-api = { path = "crates/vigily-api", version = "0.1.0-beta.2" }
 vigily-core = { path = "crates/vigily-core", version = "0.1.0-beta.2" }
 vigily-server = { path = "crates/vigily-server", version = "0.1.0-beta.2" }
 vigily-ui = { path = "crates/vigily-ui", version = "0.1.0-beta.2" }
-# Storage: kv0 (Lance tables on local disk or object storage). A git dependency on `main`, pinned
+# Storage: kv0 (moraine databases of Delta Lake tables on local disk or S3). A git dependency on `main`, pinned
 # to an exact commit by Cargo.lock; `cargo update -p kv0` moves it. To build against a local kv0
 # checkout instead, see "Storage dependency" in CONTRIBUTING.md.
 # `version` is what crates.io uses once kv0 is published; until then Cargo builds from git. A
 # pre-release needs its exact version here: "0.1" does not match 0.1.0-beta.1.
 kv0 = { git = "https://github.com/sayef/kv0", branch = "main", version = "0.1.0-beta.2", default-features = false }
-# Only in tests, to write a shared records table the way earlier builds did; the same versions
-# kv0 uses, so nothing extra is compiled.
-lance = { version = "14.0.2", default-features = false }
-arrow-array = "58"
 anyhow = "1"
 async-trait = "0.1"
 axum = { version = "0.8", default-features = false, features = ["http1", "json", "query", "tokio", "matched-path"] }

@@ -21,8 +21,9 @@ pub struct PurgeSummary {
     pub bytes_removed: u64,
     /// Tags deleted because they kept erased data (only with `force`).
     pub tags_deleted: Vec<String>,
-    /// The records table of an earlier version (`records.lance`) is still there, already migrated.
-    /// A purge does not reach it: it holds every record as of the upgrade until deleted by hand.
+    /// Always false. Earlier versions reported here a shared records table (`records.lance`) left
+    /// by an upgrade; repositories that can hold one are no longer opened. Kept so that clients
+    /// of earlier versions keep working.
     #[serde(default)]
     pub legacy_records_present: bool,
 }

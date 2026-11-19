@@ -53,7 +53,7 @@ pub fn tag_blocks_purge_message(error: &str) -> String {
 
 /// Purges storage, mapping a refusal because of a tag to `409 tag_blocks_purge`.
 pub(crate) async fn run_purge(s: &AppState, force: bool) -> Result<PurgeSummary, ApiError> {
-    let mut summary = match s.catalog.store().purge(force).await {
+    let summary = match s.catalog.store().purge(force).await {
         Ok(r) => r,
         Err(e) => {
             let msg = e.to_string();
@@ -66,7 +66,6 @@ pub(crate) async fn run_purge(s: &AppState, force: bool) -> Result<PurgeSummary,
             return Err(e.into());
         }
     };
-    summary.legacy_records_present = s.records.legacy_present().await?;
     // Deleted traces and runs are gone from storage now.
     *s.traces_count.lock() = None;
     *s.traces_cache.lock() = None;

@@ -1389,18 +1389,8 @@ mod tests {
         assert_eq!(left[0].id, "tb");
         assert!(get(&rs, "ta").await.unwrap().is_none());
 
-        fn files_contain(dir: &std::path::Path, needle: &[u8]) -> bool {
-            std::fs::read_dir(dir).unwrap().flatten().any(|e| {
-                let p = e.path();
-                if p.is_dir() {
-                    files_contain(&p, needle)
-                } else {
-                    std::fs::read(&p)
-                        .map(|b| b.windows(needle.len()).any(|w| w == needle))
-                        .unwrap_or(false)
-                }
-            })
-        }
+        // Raw bytes, and every string value of the (compressed) Parquet files.
+        let files_contain = kv0::testing::stored_anywhere;
         assert!(files_contain(dir.path(), MARKER.as_bytes()));
         store.purge(false).await.unwrap();
         assert!(

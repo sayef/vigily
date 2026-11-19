@@ -15,7 +15,8 @@ path = "src/main.rs"
 
 [features]
 default = []
-# Object-store backends for repositories on S3, GCS or Azure (local directories always work).
+# Object-store backends (see vigily-core's features): S3 is always built in, GCS and Azure are not
+# supported by kv0 yet. Kept so that builds selecting them keep working.
 s3 = ["vigily-core/s3"]
 gcs = ["vigily-core/gcs"]
 azure = ["vigily-core/azure"]
@@ -47,7 +48,7 @@ futures-util = { version = "0.3", default-features = false }
 getrandom = "0.3"
 # Encrypting stored webhook URLs and passwords: the XChaCha20-Poly1305 AEAD from RustCrypto (pure
 # Rust, audited) seals each value, and BLAKE3's key derivation turns the operator's key into the
-# 256-bit sealing key (blake3 is already in the tree through lance).
+# 256-bit sealing key (blake3 is already in the tree through DataFusion).
 chacha20poly1305 = "0.11"
 blake3 = "1"
 # Alert channels. E-mail over SMTP with STARTTLS or TLS through rustls (the TLS stack reqwest
