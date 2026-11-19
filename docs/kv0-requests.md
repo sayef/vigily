@@ -7,8 +7,10 @@ tracking layer (`kv0::tracking`) through two adapters:
 
 ## Status
 
-vigily builds against kv0 `main`, which has every feature below except 7 and 23. Items 16 onward
-came up later, while I was building vigily on the first ones. Where vigily uses each:
+vigily builds against kv0 0.1.0-beta.3, which has every feature below except 7 and 23. Items 16
+onward came up later, while I was building vigily on the first ones. kv0 now stores everything with
+moraine instead of Lance; the plans below still say Lance where that was the engine at the time.
+Where vigily uses each:
 
 | Feature | Status | Where vigily uses it |
 |---|---|---|
@@ -29,11 +31,11 @@ came up later, while I was building vigily on the first ones. Where vigily uses 
 | 15. Named versions | Done, per table | A dataset version's tag keeps only its dataset's table |
 | 16. Purge (kv0 #12) | Done | `vigily runs purge [--force]` |
 | 17. Several runs per records query, `run_ids` (kv0 #13) | Done | Drift reads a suite's results and features in one query |
-| 18. Opening repositories with the old shared records table (kv0 #13) | Done | vigily migrates it once on open and keeps it |
+| 18. Opening repositories with the old shared records table (kv0 #13) | Done, then removed | Only Lance repositories had the table, and kv0 no longer opens them; vigily's copy is gone |
 | 19. Tags on tables with escaped names (kv0 #13) | Fixed | vigily names dataset tables `dataset.<name>` anyway |
 | 20. Lower memory for `optimize` (kv0 #14) | Done | See docs/architecture.md for `vigily up` memory with and without optimizing at start |
 | 21. Folding superseded run rows (kv0 #15) | Done | Heartbeat rows (one every 2 minutes per open run) are folded by the background optimize |
-| 22. A cheap check for the old shared records table | Done | `has_legacy_records()`: one directory listing on each open and in `vigily runs purge` |
+| 22. A cheap check for the old shared records table | Done, then removed | No longer needed (see 18) |
 | 23. Several item ids, or an item-id prefix, per records query | Not done | Traces store spans in one row per batch and keep span ids in a row of their own; see below |
 | 24. Batched point writes, `track_many` (kv0 #19) | Done | `RunWriter::track_batch` writes each ingested series batch with one `Run::track_many` call |
 

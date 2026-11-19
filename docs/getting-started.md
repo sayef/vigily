@@ -58,10 +58,9 @@ the `vigily` Python package.
 
 ### Requirements
 
-- Rust (stable), with `cargo`
+- Rust (stable, 1.95 or later), with `cargo`
 - Node 24 (only to build the web app; nothing runs on Node afterwards)
 - [uv](https://docs.astral.sh/uv/) for the Python side
-- `protoc`, the Protocol Buffers compiler (`brew install protobuf` or `apt install protobuf-compiler`)
 
 Storage comes from [kv0](https://github.com/sayef/kv0), which cargo fetches as a git dependency.
 

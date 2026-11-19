@@ -4,7 +4,7 @@ A tour of the code. The reasons behind the choices are in [DESIGN.md](https://gi
 
 ```text
 training script ── vigily (Python, python/vigily) ─┐
-browser ── vigily-ui (embedded) ───────────────────┼── HTTP ── vigily-server (engine) ── vigily-core ── kv0 ── Lance datasets
+browser ── vigily-ui (embedded) ───────────────────┼── HTTP ── vigily-server (engine) ── vigily-core ── kv0 ── moraine
 vigily (command line, vigily-cli) ─────────────────┘
 ```
 
@@ -213,12 +213,15 @@ everything in the order it was logged. The tests (`python/tests`) start real eng
 ## Tests
 
 - `cargo nextest run`: core unit tests (model, query, chart, catalog against `MemoryStore`, and a
-  round trip through Lance in a temporary directory) and server tests that drive the router in memory.
+  round trip through kv0 in a temporary directory) and server tests that drive the router in memory.
 - `uv run --no-sync pytest`: the SDK against the built extension, including exit handling in
   subprocesses.
 - `npm run qa` in `crates/vigily-ui`: the browser pass against a running server.
 
 ## Scale test
+
+The numbers in this section and the next were measured while kv0 stored repositories with Lance,
+before it moved to moraine; I have not measured them again since.
 
 `bench/scale.py` logs synthetic runs; then time the server:
 
@@ -273,7 +276,7 @@ Decisions, from these numbers:
 - **Memory is returned after each optimize** (`malloc_trim` on Linux with glibc): the server settles
   at about 700 MB instead of keeping the 900 MB it reached. mimalloc settles lower still (about
   520 MB) but costs 240 MB more at rest, so the default stays glibc.
-- The rest (about 600 MB above rest) is kv0's and Lance's caches after an optimize; noted as
+- The rest (about 600 MB above rest) is kv0's and Lance's caches after an optimize (Lance as it was then); noted as
   kv0 work. `--optimize-every` sets the interval (default `15m`) and `--no-optimize` turns it off, for
   small machines.
 

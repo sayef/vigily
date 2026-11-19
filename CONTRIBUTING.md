@@ -5,8 +5,8 @@ large change so we can agree on the approach.
 
 ## Set up
 
-You need Rust (stable), Node 24 (`crates/vigily-ui/.nvmrc`), [uv](https://docs.astral.sh/uv/) and
-`protoc`. Storage comes from [kv0](https://github.com/sayef/kv0), a git dependency that cargo fetches
+You need Rust (stable, 1.95 or later), Node 24 (`crates/vigily-ui/.nvmrc`) and
+[uv](https://docs.astral.sh/uv/). Storage comes from [kv0](https://github.com/sayef/kv0), a git dependency that cargo fetches
 for you (see [Storage dependency](#storage-dependency)).
 
 ```bash
@@ -143,7 +143,7 @@ owner `sayef`, repository `vigily` and workflow `release.yml`: project `vigily` 
 `pypi`, and project `vigily-engine` with environment `pypi-engine` (PyPI refuses two pending
 publishers with the same repository, workflow and environment). Renaming the workflow file or an
 environment breaks the uploads until the publishers are updated to match. A pull request that
-changes `release.yml`, `.github/scripts/install-protoc.sh` or `crates/vigily-server/pyproject.toml`
+changes `release.yml` or `crates/vigily-server/pyproject.toml`
 builds the engine wheels (and reports their sizes) without publishing anything.
 
 **crates.io.** vigily is not published there yet. kv0 0.1.0-beta.2, which has `Run::track_many`,

@@ -56,6 +56,33 @@ All notable changes to vigily are documented here. The format follows
 - docs/guides/notifications.md: each channel kind's setup, webhook signature checks, routing rules,
   the encryption key and its rotation (also with Docker secrets), and internal-address refusal.
 
+### Changed
+
+- Storage is now [moraine](https://github.com/sayef/moraine) through kv0 0.1.0-beta.3: a repository
+  is one moraine database of Delta Lake tables (Parquet files and a commit log) in a directory or
+  an S3 bucket, instead of Lance datasets. vigily's HTTP API, SDK and stored model do not change.
+- **Repositories written by 0.1.0-beta.1 and earlier cannot be opened.** The engine stops with a
+  "not supported" error that names the location, says it is a repository of an earlier vigily and
+  links the upgrade steps; the old repository is never modified. I chose not to ship a migration
+  while vigily is in beta: keep what you need with the release that wrote it and start a new
+  repository (docs/guides/storage.md, "Upgrading an earlier repository").
+- Only the latest and tagged storage versions are readable. vigily tags every dataset version it
+  commits, so the storage version an audit record cites stays readable; vigily reads no other old
+  versions.
+- S3 is built into every engine. Google Cloud Storage (`gs://`) and Azure Blob Storage (`az://`)
+  are not supported by the storage engine yet and fail with "not supported"; the `gcs` and
+  `azure` build features are kept and enable nothing for now. S3 credentials come from the
+  `AWS_*` environment variables; AWS profiles and SSO sessions are no longer read.
+- Building from source no longer needs `protoc`. Minimum Rust version 1.95.
+- `vigily-core`: a new error variant, `Error::Unsupported`, for kv0's "not supported" errors,
+  including the refusal of an earlier repository.
+
+### Removed
+
+- The one-time copy of the shared records table (`records.lance`) of earlier builds into
+  per-table records, and its lock file `<repo>/.migrating`: no repository that can hold that
+  table can be opened any more. `legacy_records_present` in the purge response is always false.
+
 ### Deprecated
 
 - `[alerts] webhook` in vigily.toml: it keeps working as the read-only notification channel

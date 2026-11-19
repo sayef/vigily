@@ -100,7 +100,7 @@
       <div class="vg-split">
         <aside class="vg-note">
           <b>Where data lives</b>
-          Lance tables written by kv0, in a directory or a bucket: local disk, S3, GCS or Azure.
+          Delta Lake tables written by kv0 and moraine, in a directory or a bucket: local disk or S3.
         </aside>
         <div class="vg-body">
           <p>The web app, the API, the scheduler and the drift monitor are one Rust binary.</p>
@@ -138,7 +138,7 @@ run.finish()</code></pre>
           </details>
           <details>
             <summary>Do I need a database server?</summary>
-            <p>No. Storage is Lance tables through kv0, on local disk, S3, GCS or Azure.</p>
+            <p>No. Storage is Delta Lake tables through kv0 and moraine, on local disk or S3.</p>
           </details>
           <details>
             <summary>Can the web app start commands?</summary>
