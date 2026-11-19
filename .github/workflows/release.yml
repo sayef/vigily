@@ -26,7 +26,6 @@ on:
   pull_request:
     paths:
       - .github/workflows/release.yml
-      - .github/scripts/install-protoc.sh
       - crates/vigily-server/pyproject.toml
   workflow_dispatch:
     inputs:
@@ -123,13 +122,6 @@ jobs:
         with:
           name: ui-dist
           path: vigily/crates/vigily-ui/dist
-      # Debian 11's security archive is retired; the build tools come from the main archive.
-      - if: runner.os == 'Linux'
-        run: |
-          sed -i '/bullseye-security/d' /etc/apt/sources.list
-          apt-get update && apt-get install -y --no-install-recommends protobuf-compiler libprotobuf-dev
-      - if: runner.os == 'macOS'
-        run: brew install protobuf
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
         with:
           toolchain: stable
@@ -203,13 +195,10 @@ jobs:
         with:
           name: ui-dist
           path: crates/vigily-ui/dist
-      - if: runner.os == 'macOS'
-        run: brew install protobuf
       - uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
         with:
           target: ${{ matrix.target }}
           manylinux: ${{ matrix.manylinux || 'auto' }}
-          before-script-linux: .github/scripts/install-protoc.sh
           args: --release --strip --locked --out dist --manifest-path crates/vigily-server/Cargo.toml
       - name: The wheel's size
         run: |
