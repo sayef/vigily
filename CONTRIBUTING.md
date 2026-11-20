@@ -6,7 +6,7 @@ large change so we can agree on the approach.
 ## Set up
 
 You need Rust (stable, 1.95 or later), Node 24 (`crates/vigily-ui/.nvmrc`) and
-[uv](https://docs.astral.sh/uv/). Storage comes from [kv0](https://github.com/sayef/kv0), a git dependency that cargo fetches
+[uv](https://docs.astral.sh/uv/). Storage comes from [kv0](https://github.com/sayef/kv0), a crates.io dependency that cargo fetches
 for you (see [Storage dependency](#storage-dependency)).
 
 ```bash
@@ -22,29 +22,26 @@ For UI work, `npm run dev` in `crates/vigily-ui` serves the app with hot reload 
 
 ## Storage dependency
 
-vigily depends on kv0 by git, on its `main` branch:
+vigily depends on kv0 from crates.io:
 
 ```toml
-kv0 = { git = "https://github.com/sayef/kv0", branch = "main", version = "0.1.0-beta.2", default-features = false }
+kv0 = { version = "0.1.0-beta.3", default-features = false }
 ```
 
-Cargo builds from git; the `version` is what crates.io will use once kv0 is published, and it keeps
-`cargo deny` from treating the dependency as a wildcard. `deny.toml` allows this one git source.
-
-`Cargo.lock` pins the exact commit, so every build uses the same kv0 until someone runs
-`cargo update -p kv0`.
+A pre-release needs its exact version: `"0.1"` does not match `0.1.0-beta.3`. `Cargo.lock` pins it, and
+`cargo update -p kv0` moves to a newer release within that requirement.
 
 To work on vigily and kv0 together, point cargo at a local checkout without editing `Cargo.toml`;
 keep this in your own, uncommitted `~/.cargo/config.toml` or pass it on the command line:
 
 ```toml
-[patch."https://github.com/sayef/kv0"]
+[patch.crates-io]
 kv0 = { path = "../kv0/crates/kv0" }
 ```
 
 vigily talks to kv0 through two thin adapters, `crates/vigily-core/src/kv0_store.rs` (runs and
 metrics) and `crates/vigily-core/src/records.rs` (datasets, evaluations, schedules and alerts).
-Moving to another kv0 branch is one change: the `branch` in `Cargo.toml`.
+Moving to a newer kv0 is one change: the `version` in `Cargo.toml`.
 
 ## Checks
 
