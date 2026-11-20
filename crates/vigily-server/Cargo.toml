@@ -55,7 +55,7 @@ blake3 = "1"
 # already uses); no native TLS or OpenSSL.
 lettre = { version = "0.11.24", default-features = false, features = ["smtp-transport", "builder", "hostname", "tokio1-rustls-tls"] }
 # The HMAC-SHA256 signature of generic webhook deliveries (both already in the tree).
-hmac = "0.12"
+hmac = "0.13"
 sha2.workspace = true
 
 [target.'cfg(unix)'.dependencies]
