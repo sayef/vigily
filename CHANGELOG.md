@@ -6,6 +6,8 @@ All notable changes to vigily are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.0-beta.2](https://github.com/sayef/vigily/releases/tag/v0.1.0-beta.2) - 2026-11-20
+
 ### Added
 
 - Encrypted secrets for notification channels: values are stored in the repository encrypted with
