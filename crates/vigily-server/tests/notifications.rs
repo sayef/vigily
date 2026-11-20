@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 
 use axum::body::Body;
 use axum::http::{HeaderMap, Request, StatusCode};
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use http_body_util::BodyExt;
 use parking_lot::Mutex;
 use serde_json::{json, Value};
