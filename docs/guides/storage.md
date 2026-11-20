@@ -1,29 +1,31 @@
 # Self-hosting and storage
 
-vigily stores everything in a **repository**: a location that holds a few Lance tables written by
-[kv0](https://github.com/sayef/kv0). Runs, parameters and metric points live in kv0's tracking
-tables; datasets, eval results, labels, schedules and alerts live in its key-value table under
-`<repo>/records`. There is no database server.
+vigily stores everything in a **repository**: a location that holds one
+[moraine](https://github.com/sayef/moraine) database, written through
+[kv0](https://github.com/sayef/kv0): Delta Lake tables (Parquet files and a commit log) in a
+directory or a bucket. Runs, parameters and metric points live in kv0's tracking tables; datasets,
+eval results, labels, schedules and alerts live in its records tables next to them. There is no
+database server.
+
+A repository written by vigily 0.1.0-beta.1 or earlier cannot be opened by this version; see
+[Upgrading an earlier repository](#upgrading-an-earlier-repository).
 
 ## Locations
 
-| Location | Example | Build feature |
-|---|---|---|
-| Local directory | `.vigily`, `/srv/vigily` | always |
-| Amazon S3 or S3-compatible | `s3://bucket/prefix` | `s3` |
-| Google Cloud Storage | `gs://bucket/prefix` | `gcs` |
-| Azure Blob Storage | `az://container/prefix` | `azure` |
+| Location | Example |
+|---|---|
+| Local directory | `.vigily`, `/srv/vigily` |
+| Amazon S3 or S3-compatible | `s3://bucket/prefix` |
 
-Object storage support is compiled in on request, which keeps the default binary small:
+Every build reaches both. Google Cloud Storage (`gs://`) and Azure Blob Storage (`az://`) are not
+supported by the storage engine yet: such a location fails with "not supported". The build
+features `s3`, `gcs` and `azure` are still accepted and change nothing for now.
 
-```bash
-cargo build --release -p vigily-server --features s3           # or gcs, azure, or several
-```
-
-Credentials come from the environment, the way each cloud's tools expect them (for S3:
-`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` or a profile, `AWS_REGION`, and `AWS_ENDPOINT` for an
-S3-compatible server). Prefer short-lived credentials such as SSO or workload identity over
-long-lived keys, and keep the bucket in the region where the data may live.
+S3 credentials come from the `AWS_*` environment variables: `AWS_ACCESS_KEY_ID`,
+`AWS_SECRET_ACCESS_KEY` and `AWS_SESSION_TOKEN`, `AWS_REGION`, and `AWS_ENDPOINT` for an
+S3-compatible server. AWS profiles and SSO sessions are not read; export short-lived credentials
+from them instead (`eval "$(aws configure export-credentials --format env)"`), and prefer those,
+or workload identity, over long-lived keys. Keep the bucket in the region where the data may live.
 
 ## One engine, many jobs
 
@@ -113,31 +115,33 @@ What purge does not reach (from kv0's operations guide):
   deleted runs);
 - the id of each deleted run, kept as a tombstone for 30 days so the run cannot come back;
 - copies elsewhere: backups, object-store versioning or replication, caches;
-- `<repo>/records.lance`, the records table of versions before per-table records, which vigily
-  migrates once and leaves in place: delete it by hand after upgrading (purge reminds you);
 - **disk blocks**: purge deletes files, it does not overwrite them. On a local disk or SSD the
   data may stay readable to someone with access to the raw device until the blocks are reused.
   Where that matters, keep repositories on encrypted volumes (and destroy the key with the disk),
   or use secure deletion at the storage layer; on object storage, deletion is the provider's.
 
-## Upgrading from the shared records table
+## Upgrading an earlier repository
 
-Repositories written before per-table records keep evaluation data in one table,
-`<repo>/records.lance`. The first time vigily opens such a repository it copies the newest value of
-every record into the per-table layout (`<repo>/records/<table>.lance`), tags dataset versions in
-their new tables, and writes a marker last, so it never migrates again.
+vigily 0.1.0-beta.1 and earlier stored repositories with kv0's Lance engine. kv0 now stores
+everything with moraine, and this version of vigily cannot open those repositories: the engine
+stops with an error that names the location and says it is a repository of an earlier vigily. It
+never modifies the old repository.
 
-- **Upgrade with one process.** Stop training scripts and servers, then run one vigily command
-  (`vigily runs -n 1` will do) and let it finish before starting the rest. On a local disk a
-  lock (an operating-system lock on `<repo>/.migrating`, released when its process exits, even after
-  a crash) makes a second process wait for the first; on object storage there is
-  no lock, so this matters there.
-- **Interrupted?** Run it again. Keys that already exist in the new layout are never overwritten,
-  so a retry (or a late second process) cannot replace values written since; dataset versions
-  still missing a tag are tagged on every open.
-- **The old table stays.** Once you have checked the data in the web app, delete
-  `<repo>/records.lance` (it still holds every record as of the upgrade, deleted ones included).
-  `vigily runs purge` reminds you while it exists.
+I chose not to ship a migration while vigily is in beta. To upgrade:
+
+1. Stop training scripts and the engine (`vigily down`).
+2. Keep what you need with the version that wrote it, while it still serves the old repository:
+   download the runs table as CSV, export the audit records of eval runs you must keep, and read
+   runs, metrics, datasets and results with the Python SDK's `Repo` and `Dataset` to log them again
+   into the new repository. Or keep the old repository and that release side by side to look
+   things up.
+3. Point `VIGILY_REPO` (or `--repo`) at a new, empty location, or move the old directory aside,
+   and start the new version. It creates the repository on first use.
+4. Delete the old repository once you no longer need it.
+
+Storage versions are now readable only when they are the latest or tagged. vigily tags every
+dataset version it commits, so audit records keep naming versions you can read back; nothing in
+vigily reads other old versions.
 
 ## Backups and data protection
 

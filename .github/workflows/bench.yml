@@ -39,7 +39,6 @@ jobs:
           persist-credentials: false
           # bench/compare.sh builds the base commit's engine from a worktree.
           fetch-depth: 0
-      - run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
         with:
           toolchain: stable

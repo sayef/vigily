@@ -69,7 +69,8 @@ pub struct DatasetVersion {
     pub changes: Changes,
     /// Where the items came from: `sdk`, `jsonl:<file name>`, `csv:<file name>`.
     pub source: Option<String>,
-    /// The storage (Lance) version the commit produced, when the backend is versioned.
+    /// The version of the dataset's storage table the commit produced, when the backend is
+    /// versioned. Readable through `storage_tag`: only the latest and tagged versions are kept.
     pub storage_version: Option<u64>,
     /// The storage tag that names `storage_version`, so version cleanup keeps it and audit
     /// records can cite exactly what was evaluated.

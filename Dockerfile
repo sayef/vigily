@@ -12,10 +12,6 @@ COPY crates/vigily-ui/ ./
 RUN npm run build
 
 FROM rust:1.99-bookworm AS build
-# Debian packages follow the base image tag; pinned versions would break when the archive moves on.
-# hadolint ignore=DL3008
-RUN apt-get update && apt-get install -y --no-install-recommends protobuf-compiler libprotobuf-dev \
-    && rm -rf /var/lib/apt/lists/*
 WORKDIR /src
 COPY . .
 COPY --from=ui /src/crates/vigily-ui/dist crates/vigily-ui/dist

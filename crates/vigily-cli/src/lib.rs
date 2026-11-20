@@ -628,13 +628,6 @@ pub async fn purge(c: &Client, out: &mut dyn Write, force: bool) -> Result<ExitC
             r.tags_deleted.join(", ")
         )?;
     }
-    if r.legacy_records_present {
-        writeln!(
-            out,
-            "Note: records.lance is the records table of an earlier version, already migrated. Purge does not \
-             reach it: it still holds every record as of the upgrade. Delete it by hand to erase them."
-        )?;
-    }
     writeln!(
         out,
         "Not reached by a purge: backups, object-store versioning or replication, other machines' \

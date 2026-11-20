@@ -4,7 +4,7 @@
 //!
 //! - [`model`]: runs, parameters, metric series, summaries and metric keys (`loss[val]`).
 //! - [`store`]: the storage traits; [`MemoryStore`] for tests and [`Kv0Store`] (feature
-//!   `kv0`, on by default) on Lance.
+//!   `kv0`, on by default), a moraine database through kv0.
 //! - [`catalog`]: the in-memory index the runs table is served from, refreshed incrementally.
 //! - [`query`]: the run query language (`lr<0.01 loss[val].min<0.3 status:finished`).
 //! - [`chart`]: x axes, min/max-envelope downsampling onto a shared x array, group aggregation.
@@ -65,9 +65,6 @@ pub async fn open_store(location: &str) -> Result<Arc<dyn Store>> {
     }
     #[cfg(feature = "kv0")]
     {
-        // Migrate the shared records table of earlier builds before anything else opens the
-        // repository (a no-op once done).
-        records::Kv0Records::open(location).await?;
         let s = Kv0Store::open(location, Kv0Options::default()).await?;
         Ok(Arc::new(s))
     }

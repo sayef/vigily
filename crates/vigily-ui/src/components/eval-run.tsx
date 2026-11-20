@@ -351,7 +351,7 @@ export function AuditTab({ run }: { run: RunDetail }) {
         {row("Dataset", ds.name ? <Link className="inline-flex min-h-6 items-center text-brand hover:underline" to={`/datasets/${encodeURIComponent(String(ds.name))}?version=${ds.version}`}>{`${ds.name} v${ds.version}`}</Link> : "–")}
         {row("Dataset digest", ds.digest ? <code>{String(ds.digest)}</code> : "–")}
         {row("Dataset created", ds.created_at ? String(ds.created_at) : "–")}
-        {row("Storage version", ds.storage_version != null ? <code>Lance version {String(ds.storage_version)}</code> : "–")}
+        {row("Storage version", ds.storage_version != null ? <code>{ds.storage_tag ? `${String(ds.storage_version)} (tag ${String(ds.storage_tag)})` : String(ds.storage_version)}</code> : "–")}
         {row(
           "Evaluators",
           evs.length ? (

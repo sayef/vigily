@@ -93,12 +93,6 @@ pub trait RecordStore: Send + Sync + 'static {
     async fn tag(&self, _key: &str, _name: &str) -> Result<Option<u64>> {
         Ok(None)
     }
-
-    /// Whether a records table of an earlier storage layout is still present (it is migrated on
-    /// open but kept for the operator to delete).
-    async fn legacy_present(&self) -> Result<bool> {
-        Ok(false)
-    }
 }
 
 /// Records in memory. Cloning shares the data.
@@ -191,8 +185,8 @@ mod table {
     use super::*;
     use kv0::tracking::{self as lw, NewRecord, RecordQuery};
 
-    /// Records in kv0's records tables (`<repo>/records/<table>.lance`), next to the tracking
-    /// tables. Each table is its own dataset with its own versions and tags:
+    /// Records in kv0's records tables, next to the tracking tables. Each table is its own
+    /// table with its own versions and tags:
     ///
     /// - a dataset's items and versions (`dsi/<name>/...`, `dsv/<name>/...`) live in the table
     ///   `dataset.<name>` (only characters kv0 stores as they are), so tagging a dataset version keeps only that dataset's history;
@@ -208,23 +202,19 @@ mod table {
     }
 
     impl Kv0Records {
-        /// Opens (or creates) the records of the repository at `location`, migrating the single
-        /// shared records table of earlier builds first (see [`migrate_shared`]).
+        /// Opens (or creates) the records of the repository at `location`.
         pub async fn open(location: &str) -> Result<Self> {
             let opts = lw::RepoOptions {
                 create_if_missing: true,
                 // This handle writes no runs or points: records are committed by each append.
                 flush_interval: None,
                 wal: false,
-                // vigily migrates the shared table itself, here, and keeps it for the operator.
-                legacy_records: lw::LegacyRecords::Allow,
                 ..Default::default()
             };
-            let repo = lw::Repo::open(location, opts).await?;
+            let repo = crate::kv0_store::open_repo(location, opts).await?;
             let me = Self { repo };
-            migrate_shared(&me, location).await?;
-            // Every open completes tags that a dataset commit or a migration did not get to. A
-            // failure here is reported, not fatal: the next open tries again.
+            // Every open completes tags that a dataset commit did not get to. A failure here is
+            // reported, not fatal: the next open tries again.
             match crate::evals::tag_untagged_datasets(&me).await {
                 Ok(0) => {}
                 Ok(n) => tracing::info!(
@@ -407,148 +397,6 @@ mod table {
             }
             Ok(existing(self.repo.record_tags(&table).await?))
         }
-
-        async fn legacy_present(&self) -> Result<bool> {
-            Ok(self.repo.has_legacy_records().await?)
-        }
-    }
-
-    // ---------------------------------------------------------------------------------------------
-    // Migration from the shared records table
-
-    /// The marker row that says the shared table was migrated: table `meta`, this item id.
-    const MIGRATED: &str = "meta/migrated-shared-records";
-
-    /// Copies the records of the single shared table that earlier builds wrote
-    /// (`<repo>/records.lance`, which kv0 no longer reads) into the per-table layout, once.
-    ///
-    /// - Crash-safe and idempotent: the newest value of each key is appended to its new table, the
-    ///   dataset versions are tagged in their new tables, and the marker is written last. An
-    ///   interrupted migration runs again from the start.
-    /// - A key already present in the new layout is skipped, so a migration that runs again (or in a
-    ///   second process) never overwrites a value written since.
-    /// - On a local repository a lock file (`<repo>/.migrating`) keeps two processes from migrating
-    ///   at once; on object storage, upgrade with one process (the storage guide says so).
-    /// - The old table is never deleted here: remove it by hand once the migration is confirmed.
-    pub(super) async fn migrate_shared(rs: &Kv0Records, location: &str) -> Result<usize> {
-        if rs.get(MIGRATED).await?.is_some() {
-            return Ok(0);
-        }
-        let Some(rows) = read_shared(rs).await? else {
-            return Ok(0);
-        };
-        // Wait for any other process migrating this repository, then look again: it may have
-        // finished (marker written) or failed (no marker, so this process migrates).
-        let _lock = MigrationLock::acquire(location).await?;
-        if rs.get(MIGRATED).await?.is_some() {
-            return Ok(0);
-        }
-        // Newest value per key; keys deleted in the old table are left out.
-        let mut newest: BTreeMap<String, (u64, Value)> = BTreeMap::new();
-        for (key, seq, value) in rows {
-            if newest.get(&key).is_none_or(|(s, _)| seq > *s) {
-                newest.insert(key, (seq, value));
-            }
-        }
-        // Keys the new layout has already (written since, or by an earlier attempt) stay as they are.
-        let mut present: std::collections::HashSet<String> = std::collections::HashSet::new();
-        let mut tables: Vec<String> = newest.keys().filter_map(|k| table_of(k).ok()).collect();
-        tables.sort();
-        tables.dedup();
-        for table in &tables {
-            for r in rs.repo.records(table, RecordQuery::default()).await? {
-                present.insert(r.item_id);
-            }
-        }
-        let rows: Vec<(String, Value)> = newest
-            .into_iter()
-            .filter(|(k, (_, v))| !v.is_null() && !present.contains(k))
-            .map(|(k, (_, mut v))| {
-                // A dataset version's storage version and tag named the shared table, which no
-                // longer counts: drop them so the version is tagged again in its own table.
-                if k.starts_with("dsv/") {
-                    if let Some(o) = v.as_object_mut() {
-                        o.insert("storage_version".into(), Value::Null);
-                        o.insert("storage_tag".into(), Value::Null);
-                    }
-                }
-                (k, v)
-            })
-            .collect();
-        let n = rows.len();
-        for chunk in rows.chunks(5_000) {
-            rs.append(chunk.to_vec()).await?;
-        }
-        // Tag before the marker; versions this misses are tagged by a later open.
-        if let Err(e) = crate::evals::tag_untagged_datasets(rs).await {
-            tracing::warn!(error = %e, "could not tag migrated dataset versions; a later open retries");
-        }
-        let marker = serde_json::json!({
-            "from": "records.lance",
-            "rows": n,
-            "at": crate::store::now_micros(),
-        });
-        rs.append(vec![(MIGRATED.to_string(), marker)]).await?;
-        tracing::info!(
-            rows = n,
-            "migrated the shared records table to per-table records"
-        );
-        Ok(n)
-    }
-
-    /// An advisory lock (flock) on `<repo>/.migrating`, held while one process migrates, so a
-    /// second process on the machine waits. The operating system releases it when its holder
-    /// exits, crashed or not, so a dead holder never blocks anyone. The file itself stays; it is
-    /// never deleted, since another process may hold a lock on it. Object stores get no lock (see
-    /// [`migrate_shared`]).
-    struct MigrationLock(#[allow(dead_code)] Option<std::fs::File>);
-
-    impl MigrationLock {
-        async fn acquire(location: &str) -> Result<Self> {
-            if location.contains("://") {
-                return Ok(Self(None));
-            }
-            let path = std::path::Path::new(location).join(".migrating");
-            let file = std::fs::OpenOptions::new()
-                .create(true)
-                .truncate(false)
-                .write(true)
-                .open(&path)
-                .map_err(|e| Error::Storage(format!("{}: {e}", path.display())))?;
-            let mut waited = false;
-            loop {
-                match file.try_lock() {
-                    Ok(()) => return Ok(Self(Some(file))),
-                    Err(std::fs::TryLockError::WouldBlock) => {
-                        if !waited {
-                            tracing::info!("another process is migrating the records; waiting");
-                            waited = true;
-                        }
-                        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-                    }
-                    Err(std::fs::TryLockError::Error(e)) => {
-                        return Err(Error::Storage(format!("{}: {e}", path.display())))
-                    }
-                }
-            }
-        }
-    }
-
-    /// (key, seq, value) of every row of the shared table, or `None` when there is none.
-    async fn read_shared(rs: &Kv0Records) -> Result<Option<Vec<(String, u64, Value)>>> {
-        // One directory listing; the rows are read only when the table is there.
-        if !rs.repo.has_legacy_records().await? {
-            return Ok(None);
-        }
-        let rows = rs.repo.legacy_records(None).await?;
-        if rows.is_empty() {
-            return Ok(None);
-        }
-        Ok(Some(
-            rows.into_iter()
-                .map(|r| (r.item_id, r.seq, r.data))
-                .collect(),
-        ))
     }
 
     #[cfg(test)]
@@ -587,8 +435,9 @@ mod table {
             assert!(a.get("nokey").await.is_err());
 
             // A dataset's tag keeps only that dataset's table.
-            a.tag("dsv/qa/", "ds-qa-v1").await.unwrap();
+            // The tag names the latest version at the time (making it may itself commit).
             let v = a.storage_version("dsv/qa/").await.unwrap().unwrap();
+            assert_eq!(a.tag("dsv/qa/", "ds-qa-v1").await.unwrap(), Some(v));
             assert_eq!(
                 a.repo.record_tags("dataset.qa").await.unwrap(),
                 vec![("ds-qa-v1".to_string(), v)]
@@ -600,193 +449,45 @@ mod table {
             );
         }
 
-        /// (seq, table, run, key, value) of a row in the shared table.
-        type SharedRow<'a> = (u64, &'a str, Option<&'a str>, &'a str, Option<Value>);
-
-        /// Writes a shared records table the way earlier builds did (kv0 before per-table
-        /// records: one `records.lance`, a deleted key stored as JSON `null`).
-        async fn write_shared(loc: &str, rows: &[SharedRow<'_>]) {
-            use arrow_array::{
-                RecordBatch, RecordBatchIterator, StringArray, TimestampMicrosecondArray,
-                UInt64Array,
-            };
-            use std::sync::Arc;
-            let data: Vec<String> = rows
-                .iter()
-                .map(|r| r.4.clone().unwrap_or(Value::Null).to_string())
-                .collect();
-            let batch = RecordBatch::try_from_iter(vec![
-                (
-                    "seq",
-                    Arc::new(UInt64Array::from_iter_values(rows.iter().map(|r| r.0))) as _,
-                ),
-                (
-                    "table_name",
-                    Arc::new(StringArray::from_iter_values(rows.iter().map(|r| r.1))) as _,
-                ),
-                (
-                    "run_id",
-                    Arc::new(rows.iter().map(|r| r.2).collect::<StringArray>()) as _,
-                ),
-                (
-                    "item_id",
-                    Arc::new(StringArray::from_iter_values(rows.iter().map(|r| r.3))) as _,
-                ),
-                ("data", Arc::new(StringArray::from_iter_values(data)) as _),
-                (
-                    "created_at",
-                    Arc::new(
-                        TimestampMicrosecondArray::from(vec![0; rows.len()]).with_timezone("UTC"),
-                    ) as _,
-                ),
-            ])
-            .unwrap();
-            let schema = batch.schema();
-            let reader = RecordBatchIterator::new(vec![Ok(batch)], schema);
-            lance::Dataset::write(reader, &format!("{loc}/records.lance"), None)
-                .await
-                .unwrap();
-        }
-
-        #[tokio::test(flavor = "multi_thread")]
-        async fn the_shared_table_is_migrated_once_and_kept() {
-            let dir = tempfile::tempdir().unwrap();
-            let loc = dir.path().to_str().unwrap();
-            write_shared(
-                loc,
-                &[
-                    (1, "res", Some("r1"), "res/r1/a", Some(json!({"v": 1}))),
-                    (2, "res", Some("r1"), "res/r1/a", Some(json!({"v": 2}))),
-                    (3, "alert", None, "alert/x", Some(json!({"id": "x"}))),
-                    (4, "alert", None, "alert/x", None),
-                    (5, "dsi", None, "dsi/qa/h1", Some(json!({"input": "hi"}))),
-                    (
-                        6,
-                        "dsv",
-                        None,
-                        "dsv/qa/00000001",
-                        Some(
-                            json!({"name": "qa", "version": 1, "created_at": 1, "note": null,
-                            "digest": "d", "items": [{"id": "a", "hash": "h1"}],
-                            "changes": {"added": 1, "updated": 0, "removed": 0}, "source": "sdk",
-                            "storage_version": 7, "storage_tag": "old-shared-tag"}),
-                        ),
-                    ),
-                    (
-                        7,
-                        "ds",
-                        None,
-                        "ds/qa",
-                        Some(json!({"name": "qa", "description": null, "created_at": 1,
-                            "updated_at": 1, "latest": 1, "items": 1})),
-                    ),
-                ],
-            )
-            .await;
-            let rs = Kv0Records::open(loc).await.unwrap();
-            assert_eq!(rs.get("res/r1/a").await.unwrap(), Some(json!({"v": 2})));
-            assert_eq!(
-                rs.get("alert/x").await.unwrap(),
-                None,
-                "deleted keys stay deleted"
-            );
-            assert_eq!(rs.scan("dsi/qa/").await.unwrap().len(), 1);
-            assert!(rs.get(MIGRATED).await.unwrap().is_some());
-            // Dataset versions are re-tagged in their own table.
-            let v = crate::evals::dataset_version(&rs, "qa", Some(1))
-                .await
-                .unwrap();
-            assert_eq!(
-                v.storage_tag.as_deref(),
-                Some(crate::evals::dataset_tag("qa", 1).as_str())
-            );
-            let tags = rs.repo.record_tags("dataset.qa").await.unwrap();
-            assert_eq!(tags.len(), 1);
-            // A second open does not migrate again, and the old table is kept.
-            assert_eq!(migrate_shared(&rs, loc).await.unwrap(), 0);
-            assert!(std::path::Path::new(&format!("{loc}/records.lance")).exists());
-        }
-
-        fn shared_rows() -> Vec<SharedRow<'static>> {
+        /// A dataset `qa` with one version, written as records (no storage tag yet).
+        fn dataset_rows() -> Vec<(String, Value)> {
             vec![
+                ("dsi/qa/h1".into(), json!({"input": "hi"})),
                 (
-                    1,
-                    "alert",
-                    None,
-                    "alert/a1",
-                    Some(json!({"id": "a1", "acknowledged_at": null})),
-                ),
-                (2, "dsi", None, "dsi/qa/h1", Some(json!({"input": "hi"}))),
-                (
-                    3,
-                    "dsv",
-                    None,
-                    "dsv/qa/00000001",
-                    Some(
-                        json!({"name": "qa", "version": 1, "created_at": 1, "note": null,
-                        "digest": "d", "items": [{"id": "a", "hash": "h1"}],
-                        "changes": {"added": 1, "updated": 0, "removed": 0}, "source": "sdk",
-                        "storage_version": 7, "storage_tag": null}),
-                    ),
+                    "dsv/qa/00000001".into(),
+                    json!({"name": "qa", "version": 1, "created_at": 1, "note": null,
+                    "digest": "d", "items": [{"id": "a", "hash": "h1"}],
+                    "changes": {"added": 1, "updated": 0, "removed": 0}, "source": "sdk",
+                    "storage_version": null, "storage_tag": null}),
                 ),
                 (
-                    4,
-                    "ds",
-                    None,
-                    "ds/qa",
-                    Some(json!({"name": "qa", "description": null, "created_at": 1,
-                        "updated_at": 1, "latest": 1, "items": 1})),
+                    "ds/qa".into(),
+                    json!({"name": "qa", "description": null, "created_at": 1,
+                        "updated_at": 1, "latest": 1, "items": 1}),
                 ),
             ]
-        }
-
-        async fn raw(loc: &str) -> Kv0Records {
-            let opts = lw::RepoOptions {
-                legacy_records: lw::LegacyRecords::Allow,
-                ..Default::default()
-            };
-            Kv0Records {
-                repo: lw::Repo::open(loc, opts).await.unwrap(),
-            }
-        }
-
-        #[tokio::test(flavor = "multi_thread")]
-        async fn a_migration_interrupted_after_copying_completes_on_the_next_open() {
-            let dir = tempfile::tempdir().unwrap();
-            let loc = dir.path().to_str().unwrap();
-            write_shared(loc, &shared_rows()).await;
-            // The first attempt copied some rows, then stopped: no tags, no marker.
-            raw(loc)
-                .await
-                .append(vec![("dsi/qa/h1".into(), json!({"input": "hi"}))])
-                .await
-                .unwrap();
-            let rs = Kv0Records::open(loc).await.unwrap();
-            assert!(rs.get(MIGRATED).await.unwrap().is_some());
-            assert!(rs.get("ds/qa").await.unwrap().is_some());
-            let v = crate::evals::dataset_version(&rs, "qa", Some(1))
-                .await
-                .unwrap();
-            assert_eq!(
-                v.storage_tag.as_deref(),
-                Some(crate::evals::dataset_tag("qa", 1).as_str())
-            );
-            // The lock file stays, but nobody holds it any more.
-            let f = std::fs::File::open(format!("{loc}/.migrating")).unwrap();
-            assert!(f.try_lock().is_ok());
         }
 
         #[tokio::test(flavor = "multi_thread")]
         async fn untagged_versions_are_tagged_on_open_and_existing_tags_are_kept() {
             let dir = tempfile::tempdir().unwrap();
             let loc = dir.path().to_str().unwrap();
-            write_shared(loc, &shared_rows()).await;
+            Kv0Records::open(loc)
+                .await
+                .unwrap()
+                .put(dataset_rows())
+                .await
+                .unwrap();
             let rs = Kv0Records::open(loc).await.unwrap();
             let tagged = crate::evals::dataset_version(&rs, "qa", Some(1))
                 .await
                 .unwrap();
-            // The tag exists in storage, but the version row lost it (a process stopped after the
-            // marker, or another process tagged it first).
+            assert_eq!(
+                tagged.storage_tag.as_deref(),
+                Some(crate::evals::dataset_tag("qa", 1).as_str())
+            );
+            // The tag exists in storage, but the version row lost it (a process stopped after
+            // committing, or another process tagged it first).
             let mut v = tagged.clone();
             v.storage_tag = None;
             v.storage_version = None;
@@ -809,51 +510,37 @@ mod table {
         }
 
         #[tokio::test(flavor = "multi_thread")]
-        async fn a_waiter_migrates_when_the_lock_holder_fails_without_the_marker() {
-            let dir = tempfile::tempdir().unwrap();
-            let loc = dir.path().to_str().unwrap().to_string();
-            write_shared(&loc, &shared_rows()).await;
-            // Another process holds the lock, then dies without writing the marker.
-            let holder = std::fs::OpenOptions::new()
-                .create(true)
-                .truncate(false)
-                .write(true)
-                .open(dir.path().join(".migrating"))
-                .unwrap();
-            holder.lock().unwrap();
-            let l = loc.clone();
-            let waiter = tokio::spawn(async move { Kv0Records::open(&l).await.unwrap() });
-            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-            assert!(!waiter.is_finished(), "the waiter waits for the lock");
-            drop(holder);
-            let rs = waiter.await.unwrap();
-            assert!(
-                rs.get(MIGRATED).await.unwrap().is_some(),
-                "the waiter migrated"
-            );
-            assert!(rs.get("ds/qa").await.unwrap().is_some());
-        }
-
-        #[tokio::test(flavor = "multi_thread")]
-        async fn a_migration_never_overwrites_values_written_in_the_new_layout() {
+        async fn a_repository_of_an_earlier_vigily_is_refused_untouched() {
+            // The layout kv0 0.1.0-beta.2 and earlier wrote: Lance datasets named `<table>.lance`.
             let dir = tempfile::tempdir().unwrap();
             let loc = dir.path().to_str().unwrap();
-            write_shared(loc, &shared_rows()).await;
-            // Another process migrated and then acknowledged the alert; this process's migration
-            // runs late (no marker yet, as if both started at once).
-            raw(loc)
-                .await
-                .append(vec![(
-                    "alert/a1".into(),
-                    json!({"id": "a1", "acknowledged_at": 5}),
-                )])
-                .await
-                .unwrap();
-            let rs = Kv0Records::open(loc).await.unwrap();
-            assert_eq!(
-                rs.get("alert/a1").await.unwrap(),
-                Some(json!({"id": "a1", "acknowledged_at": 5}))
-            );
+            let runs = dir.path().join("runs.lance");
+            std::fs::create_dir_all(runs.join("_versions")).unwrap();
+            let before: Vec<_> = std::fs::read_dir(dir.path())
+                .unwrap()
+                .flatten()
+                .map(|e| e.file_name())
+                .collect();
+            for e in [
+                Kv0Records::open(loc).await.err().unwrap(),
+                crate::Kv0Store::open(loc, Default::default())
+                    .await
+                    .err()
+                    .unwrap(),
+            ] {
+                assert!(matches!(e, crate::Error::Unsupported(_)), "{e}");
+                let m = e.to_string();
+                assert!(
+                    m.contains("earlier vigily") && m.contains("no migration"),
+                    "{m}"
+                );
+            }
+            let after: Vec<_> = std::fs::read_dir(dir.path())
+                .unwrap()
+                .flatten()
+                .map(|e| e.file_name())
+                .collect();
+            assert_eq!(before, after, "nothing was written");
         }
 
         #[test]

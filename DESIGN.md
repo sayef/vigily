@@ -15,7 +15,7 @@ Goals:
   database server, no Node at runtime.
 - Fast with thousands of runs and series of 100 000 points or more.
 - A UI for long sessions: dense, keyboard-first, legible numbers, light and dark.
-- Storage anywhere kv0 can write: a local directory, S3, GCS, Azure.
+- Storage anywhere kv0 can write: a local directory or S3 today; GCS and Azure once kv0 has them.
 
 Non-goals for now: images, audio, text and distribution tracking; multi-user accounts; a hosted
 service; importing other trackers' repositories.
@@ -44,7 +44,7 @@ implementations:
 
 Why a trait when there is one real backend: kv0 is being rewritten at the same time as
 vigily, by another author, and its tracking API is still moving. The trait isolates every change
-to one file (`kv0_store.rs`) and lets every other test run without Lance. What vigily needs
+to one file (`kv0_store.rs`) and lets every other test run without storage. What vigily needs
 from kv0 and does not get yet is in [docs/kv0-requests.md](docs/kv0-requests.md).
 
 ### Writes
@@ -217,8 +217,8 @@ live in a [`RecordStore`](crates/vigily-core/src/records.rs): JSON values under 
 keys, written in batches and read by key or prefix. `evals.rs` owns the key layout (`ds/`,
 `dsv/`, `dsi/`, `res/`, `lab/`, `feat/`, `sch/`, `alert/`, `baseline/`); nothing else builds keys.
 
-The production backend is kv0's **records tables** (`<repo>/records/<table>.lance`), next to the
-tracking tables. Each table is its own Lance dataset with its own versions and tags, chosen by
+The production backend is kv0's **records tables**, next to the tracking tables in the
+repository's moraine database. Each table has its own versions and tags, chosen by
 lifecycle: one per dataset (`dataset.<name>`, its items and versions), and one per other key prefix
 (`res`, `lab`, `feat`, `sch`, `schout`, `alert`, `ds`, ...). The whole key is the item id; results,
 labels and feature samples also carry their run id, so a run's records are read through kv0's
@@ -232,22 +232,35 @@ Giving each dataset its own table matters for audit tags: a tag keeps one table'
 cleanup and purge, so tagging a dataset version keeps only that dataset's history, never other
 runs' results, and never blocks erasing a deleted run.
 
-Repositories from before this layout kept every record in one shared table (`records.lance`);
-vigily copies it into the new tables once on open and writes a marker (`meta`), and leaves the old
-table for the operator to delete.
+Repositories from before this layout kept every record in one shared table (`records.lance`), and
+vigily used to copy it into the new tables once on open. Those repositories are Lance repositories,
+which kv0 no longer opens, so the copy is gone.
+
+### Storage engine
+
+kv0 stored repositories with Lance up to vigily 0.1.0-beta.1. It now stores them with moraine, a
+client-only database of Delta Lake tables, and Lance is gone from kv0. I did not ship a migration
+while vigily is in beta: a repository of 0.1.0-beta.1 or earlier is refused with a vigily error
+(`Error::Unsupported`) that says it was written by an earlier vigily and points at the upgrade
+steps, and the location is never written. vigily recognises such a repository by asking kv0 what
+the location holds once kv0 refuses it, not by matching kv0's message.
+
+moraine keeps only the latest version of a table and the versions a tag names; there is no general
+time travel. vigily never read old versions except through the tags it makes for dataset versions,
+so nothing else changes.
 
 ### Datasets and versions
 
 A dataset version is immutable and content-addressed. An item's hash (SHA-256, 16 hex digits) covers
 its input, expected output and metadata in canonical JSON; items are stored once per hash and shared
 between versions. A version lists its item ids and hashes in order, and its digest hashes that list.
-Committing the same items again returns the existing version. Each version also records the Lance
-version of the record store after its commit and tags that version (`ds-<name>-<hash>-v<n>`), so
+Committing the same items again returns the existing version. Each version also records the storage
+version of its dataset's table after its commit and tags that version (`ds-<name>-<hash>-v<n>`), so
 version cleanup keeps it and an audit record can cite exactly what was stored when it was evaluated.
 
-Rejected: using Lance versions alone as dataset versions. A Lance version covers the whole records
-dataset (every dataset, result and label), so it says nothing about one dataset changing; content
-hashes do, and they survive compaction and copying.
+Rejected: using storage versions alone as dataset versions. A storage version says nothing about
+what the dataset holds, and it does not survive copying into another repository; content hashes
+do, and they survive compaction and copying.
 
 ### Evaluators and targets
 

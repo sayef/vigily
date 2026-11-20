@@ -10,8 +10,20 @@ limited per channel and logged per alert. Channels, rules and secrets are manage
 (Settings → Notifications) and with `vigily channels`, `vigily rules` and `vigily secrets`.
 See [Alert notifications](notifications.md).
 
+Storage moved from Lance to [moraine](https://github.com/sayef/moraine), through kv0: a repository
+is now one database of Delta Lake tables (Parquet files and a commit log) in a directory or an S3
+bucket. Nothing changes in the web app, the API, the SDK or the command line.
+
 What to do when upgrading:
 
+- **Recreate your repositories.** This version cannot open a repository written by 0.1.0-beta.1 or
+  earlier; the engine stops with an error that says so and leaves the old repository as it is. I
+  chose not to ship a migration while vigily is in beta: keep what you need with the release that
+  wrote it, then start with a new location. See
+  [Upgrading an earlier repository](storage.md#upgrading-an-earlier-repository).
+- **Object storage:** S3 works in every build. Google Cloud Storage and Azure are not supported
+  until the storage engine adds them; stay on 0.1.0-beta.1 if a repository lives there. S3
+  credentials come from the `AWS_*` environment variables, not from AWS profiles or SSO sessions.
 - **Team servers:** set `VIGILY_SECRET_KEY` (or `VIGILY_SECRET_KEY_FILE`) before starting the new
   version. Channel secrets such as webhook URLs and SMTP passwords are stored encrypted with it; keep
   the key with your backups. Without it the engine still starts but refuses to store secret values.

@@ -104,10 +104,6 @@ jobs:
         with:
           name: ui-dist
           path: vigily/crates/vigily-ui/dist
-      - if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
-      - if: runner.os == 'macOS'
-        run: brew install protobuf
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
         with:
           toolchain: stable
@@ -144,7 +140,6 @@ jobs:
         with:
           name: ui-dist
           path: vigily/crates/vigily-ui/dist
-      - run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
         with:
           toolchain: stable
@@ -181,10 +176,9 @@ jobs:
         with:
           persist-credentials: false
           path: vigily
-      - run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
         with:
-          toolchain: 1.94.1
+          toolchain: "1.95"
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: vigily

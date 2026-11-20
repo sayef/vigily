@@ -1,7 +1,7 @@
 # Concepts
 
 vigily has seven ideas. Each builds on the one before, and all of them live in one repository: a
-directory or a bucket that holds Lance tables written by kv0.
+directory or a bucket that holds a moraine database (Delta Lake tables) written by kv0.
 
 ## Runs
 

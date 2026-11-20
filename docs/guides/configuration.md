@@ -7,7 +7,7 @@ the server serves it. A `vigily.toml` adds schedules, drift thresholds and notif
 
 | Variable | Used by | Meaning |
 |---|---|---|
-| `VIGILY_REPO` | SDK, CLI, engine | The repository: a directory or `s3://`, `gs://`, `az://` URI. Default `.vigily` |
+| `VIGILY_REPO` | SDK, CLI, engine | The repository: a directory or an `s3://` URI. Default `.vigily` |
 | `VIGILY_PORT` | `vigily up`, `vigily-engine` | The port, default 7600 (a free one for engines the SDK or CLI start) |
 | `VIGILY_CONFIG` | `vigily up`, `vigily-engine` | The configuration file |
 | `VIGILY_LOG` | CLI | Log filter, for example `info` or `vigily_server=debug` |
@@ -38,7 +38,7 @@ these from your shell or a `.env` file:
 | `VIGILY_SECRET_KEY`, `VIGILY_SECRET_KEY_PREVIOUS` | Optional: the key stored secrets are encrypted with, and the one before it while rotating ([Secrets](#secrets)) |
 | `VIGILY_LOG` | As above |
 
-To keep the repository on object storage, set `VIGILY_REPO` to an `s3://`, `gs://` or `az://` URI
+To keep the repository on object storage, set `VIGILY_REPO` to an `s3://` URI
 in the service's `environment`. Scripts log to the container with `VIGILY_URL` and `VIGILY_TOKEN`
 ([Running a team server](team-server.md)).
 

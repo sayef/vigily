@@ -13,6 +13,9 @@ pub enum Error {
     InvalidArgument(String),
     /// The storage layer failed.
     Storage(String),
+    /// The repository cannot be opened by this build: one written by an earlier vigily in a
+    /// storage format it no longer reads, or a location kind kv0 does not support yet.
+    Unsupported(String),
 }
 
 impl fmt::Display for Error {
@@ -21,6 +24,7 @@ impl fmt::Display for Error {
             Error::NotFound(m) => write!(f, "not found: {m}"),
             Error::InvalidArgument(m) => write!(f, "invalid argument: {m}"),
             Error::Storage(m) => write!(f, "storage error: {m}"),
+            Error::Unsupported(m) => write!(f, "not supported: {m}"),
         }
     }
 }
@@ -33,6 +37,7 @@ impl From<kv0::Error> for Error {
         match e {
             kv0::Error::NotFound(m) => Error::NotFound(m),
             kv0::Error::InvalidArgument(m) => Error::InvalidArgument(m),
+            kv0::Error::NotSupported(m) => Error::Unsupported(m),
             other => Error::Storage(other.to_string()),
         }
     }

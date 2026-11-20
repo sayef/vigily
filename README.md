@@ -46,8 +46,9 @@ jobs together, on storage you already have:
 - **LLM traces with tokens and cost.** `vigily.trace(...)` records nested spans (also over OTLP/HTTP
   JSON), prices model calls from your own price table, and stores prompts truncated, in full or not
   at all, per project.
-- **Storage on [kv0](https://github.com/sayef/kv0).** Lance tables in a directory or on S3, GCS or
-  Azure; many training jobs can write at once.
+- **Storage on [kv0](https://github.com/sayef/kv0) and [moraine](https://github.com/sayef/moraine).**
+  Delta Lake tables in a directory or on S3; many training jobs can write at once. Repositories of
+  0.1.0-beta.1 and earlier must be recreated ([upgrading](docs/guides/storage.md#upgrading-an-earlier-repository)).
 - **Fast with many runs and long curves.** Thousands of runs filter and sort in memory; charts never
   ask for more points than they have pixels.
 
@@ -107,7 +108,7 @@ directory. Releases are published as pre-releases, which `latest` does not serve
 
 ### Build from source
 
-Build with Rust, Node 24, [uv](https://docs.astral.sh/uv/) and `protoc`:
+Build with Rust 1.95 or later, Node 24 and [uv](https://docs.astral.sh/uv/):
 
 ```bash
 git clone https://github.com/sayef/vigily && cd vigily

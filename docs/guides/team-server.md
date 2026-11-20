@@ -161,7 +161,7 @@ docker compose start vigily
 
 To restore, stop the engine, empty the volume and unpack the archive into it the same way
 (`tar xzf ... -C /data`), then start it again. A repository on object storage (`VIGILY_REPO` set to
-an `s3://`, `gs://` or `az://` URI in the service's environment) is backed up with bucket
+an `s3://` URI in the service's environment) is backed up with bucket
 versioning instead. [Backups and data protection](storage.md#backups-and-data-protection) covers
 what the repository holds. Stored channel secrets are in the archive encrypted; keep
 `VIGILY_SECRET_KEY` with it (separately), or they cannot be read after a restore.

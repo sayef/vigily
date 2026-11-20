@@ -1,4 +1,4 @@
-//! [`Store`] on kv0's tracking layer (Lance datasets on a local directory or an object store).
+//! [`Store`] on kv0's tracking layer (a moraine database on a local directory or an object store).
 
 use std::collections::HashMap;
 use std::time::Duration;
@@ -19,7 +19,7 @@ use crate::store::{batch_context, check_columns, RunWriter, SeriesPoints, Store}
 pub struct Kv0Options {
     /// Create the repository when it does not exist.
     pub create_if_missing: bool,
-    /// Object-store options passed to Lance (`aws_region`, `aws_endpoint`, ...).
+    /// Object-store options passed to kv0 (`aws_region`, `aws_endpoint`, ...).
     pub storage_options: HashMap<String, String>,
     /// Commit buffered writes after this long.
     pub flush_interval: Duration,
@@ -47,21 +47,57 @@ impl Kv0Store {
         let mut o = lw::RepoOptions {
             create_if_missing: opts.create_if_missing,
             flush_interval: Some(opts.flush_interval),
-            // `open_store` migrates the shared records table of earlier builds before this open
-            // (`records::Kv0Records::open`) and keeps it for the operator to delete.
-            legacy_records: lw::LegacyRecords::Allow,
             ..Default::default()
         };
         for (k, v) in &opts.storage_options {
             o.storage_options.insert(k.clone(), v.clone());
         }
-        let repo = lw::Repo::open(location, o).await?;
+        let repo = open_repo(location, o).await?;
         Ok(Self { repo })
     }
 
     pub fn inner(&self) -> &lw::Repo {
         &self.repo
     }
+}
+
+/// Opens the kv0 repository at `location`, turning kv0's refusal of a repository that an earlier
+/// vigily wrote into an error that says what to do.
+pub(crate) async fn open_repo(location: &str, opts: lw::RepoOptions) -> Result<lw::Repo> {
+    let storage_options = opts.storage_options.clone();
+    match lw::Repo::open(location, opts).await {
+        Ok(repo) => Ok(repo),
+        Err(e @ kv0::Error::NotSupported(_)) => {
+            let loc = location.to_string();
+            // `detect` blocks on kv0's runtime; one listing and at most one small read.
+            let format =
+                tokio::task::spawn_blocking(move || kv0::storage::detect(&loc, &storage_options))
+                    .await
+                    .ok()
+                    .and_then(|r| r.ok());
+            Err(match format {
+                Some(kv0::storage::Format::Repository(engine))
+                    if engine != kv0::storage::Engine::Moraine =>
+                {
+                    old_repository(location)
+                }
+                _ => e.into(),
+            })
+        }
+        Err(e) => Err(e.into()),
+    }
+}
+
+/// The error for a repository written by vigily 0.1.0-beta.1 or an earlier build, stored with
+/// kv0's Lance engine (or the Delta Lake engine of unreleased kv0 builds).
+pub(crate) fn old_repository(location: &str) -> crate::Error {
+    crate::Error::Unsupported(format!(
+        "{location} is a repository of an earlier vigily (0.1.0-beta.1 or older), stored in a format \
+         this vigily no longer reads. There is no migration while vigily is in beta: point \
+         VIGILY_REPO at a new location to start a new repository, and keep the old one with the \
+         vigily release that wrote it. It has not been modified. See \
+         https://vigily.pages.dev/guides/storage/#upgrading-an-earlier-repository"
+    ))
 }
 
 fn status_to(s: RunStatus) -> lw::RunStatus {
@@ -381,7 +417,7 @@ mod tests {
     use std::sync::Arc;
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn round_trip_through_lance() {
+    async fn round_trip_through_kv0() {
         let dir = tempfile::tempdir().unwrap();
         let loc = dir.path().join("repo");
         let store = Kv0Store::open(loc.to_str().unwrap(), Kv0Options::default())
@@ -691,17 +727,9 @@ mod tests {
             }
             store.flush().await.unwrap();
         }
-        let rows = |loc: String| async move {
-            lance::Dataset::open(&format!("{loc}/runs.lance"))
-                .await
-                .unwrap()
-                .count_rows(None)
-                .await
-                .unwrap()
-        };
-        let before = rows(loc.to_string()).await;
+        let before = store.repo.table_rows("runs").await.unwrap();
         store.optimize().await.unwrap();
-        let after = rows(loc.to_string()).await;
+        let after = store.repo.table_rows("runs").await.unwrap();
         eprintln!("run rows: {before} before optimize, {after} after");
         assert!(before >= 90, "{before} run rows before folding");
         assert!(after <= 6, "{after} run rows after folding (3 runs)");

@@ -256,7 +256,7 @@ pub async fn commit_dataset(
 }
 
 /// Tags every dataset version that has no storage tag yet: one whose commit was interrupted
-/// before tagging, or one migrated from an earlier layout (whose storage versions no longer exist).
+/// before tagging.
 /// The current version of the dataset's table holds every version's items, since items are never
 /// removed. Returns how many versions were tagged.
 pub async fn tag_untagged_datasets(rs: &dyn RecordStore) -> Result<usize> {

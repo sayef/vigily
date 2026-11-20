@@ -20,7 +20,7 @@ Evaluators that need a model call your own client from your own process.
 
 ## Do I need a database or a message queue?
 
-No. Storage is Lance tables through kv0, on local disk or object storage.
+No. Storage is a moraine database of Delta Lake tables through kv0, on local disk or S3.
 
 ## Can several training jobs write at once?
 
